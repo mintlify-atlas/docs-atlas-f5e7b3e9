@@ -1,0 +1,130 @@
+---
+title: postgres
+description: PostgreSQL database operations
+---
+
+Perform operations on PostgreSQL databases configured in your Clanker configuration.
+
+## Usage
+
+```bash
+clanker postgres <subcommand> [flags]
+```
+
+## Configuration
+
+Configure PostgreSQL connections in `~/.clanker.yaml`:
+
+```yaml
+postgres:
+  default_connection: dev
+  connections:
+    dev:
+      host: localhost
+      port: 5432
+      database: myapp_dev
+      username: postgres
+      description: Development database
+    staging:
+      host: staging-db.example.com
+      port: 5432
+      database: myapp_staging
+      username: app_user
+      description: Staging database
+    prod:
+      host: prod-db.example.com
+      port: 5432
+      database: myapp_prod
+      username: app_user
+      description: Production database
+```
+
+<Warning>
+Do not store passwords in the configuration file. Clanker will prompt for passwords or use `PGPASSWORD` environment variable.
+</Warning>
+
+## Subcommands
+
+### list
+
+List all PostgreSQL connections configured in your Clanker configuration.
+
+```bash
+clanker postgres list
+```
+
+**Output example:**
+
+```
+Available PostgreSQL Connections (default: dev):
+
+  dev (default)
+    Host: localhost
+    Database: myapp_dev
+    Description: Development database
+
+  staging
+    Host: staging-db.example.com
+    Database: myapp_staging
+    Description: Staging database
+
+  prod
+    Host: prod-db.example.com
+    Database: myapp_prod
+    Description: Production database
+```
+
+## Integration with ask command
+
+While the `postgres list` command shows configured connections, you would typically use database-specific tools or SQL clients for actual database operations.
+
+For future AI-powered database queries, the integration would look like:
+
+```bash
+# Query schema
+clanker ask --postgres "What tables exist in the dev database?"
+
+# Check connections
+clanker ask --postgres "Can I connect to the staging database?"
+
+# Analyze schema
+clanker ask --postgres "Show me the schema for the users table"
+```
+
+<Note>
+Currently, the postgres command is limited to listing configured connections. Full database query capabilities are planned for future releases.
+</Note>
+
+## Environment variables
+
+For database passwords, use standard PostgreSQL environment variables:
+
+```bash
+export PGPASSWORD="your-password"
+clanker postgres list
+```
+
+Or use a `.pgpass` file in your home directory:
+
+```
+# ~/.pgpass format:
+# hostname:port:database:username:password
+localhost:5432:myapp_dev:postgres:devpassword
+staging-db.example.com:5432:myapp_staging:app_user:stagingpassword
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure PostgreSQL connections
+  </Card>
+  
+  <Card title="Multi-environment" icon="network-wired" href="/guides/multi-environment">
+    Manage database connections per environment
+  </Card>
+  
+  <Card title="Security" icon="shield" href="/guides/security">
+    Best practices for database credentials
+  </Card>
+</CardGroup>

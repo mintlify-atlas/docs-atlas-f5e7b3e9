@@ -1,0 +1,178 @@
+---
+title: deploy
+description: Analyze and deploy GitHub repositories to the cloud
+---
+
+Clone a GitHub repository, analyze its stack, and generate a deployment plan.
+
+## Usage
+
+```bash
+clanker deploy <repo-url> [flags]
+```
+
+## How it works
+
+The deploy command follows a multi-stage process:
+
+<Steps>
+  <Step title="Clone repository">
+    Clones the GitHub repository to a temporary directory
+  </Step>
+  
+  <Step title="Analyze stack">
+    Detects the technology stack (Node.js, Python, Go, Docker, etc.)
+  </Step>
+  
+  <Step title="Generate plan">
+    Uses AI to create a deployment plan based on detected stack and target platform
+  </Step>
+  
+  <Step title="Apply (optional)">
+    Executes the deployment plan if `--apply` flag is provided
+  </Step>
+</Steps>
+
+## Flags
+
+<ParamField path="--apply" type="boolean" default="false">
+  Execute the deployment plan immediately
+</ParamField>
+
+<ParamField path="--provider" type="string" default="aws">
+  Target cloud provider: `aws`, `gcp`, `azure`, `cloudflare`
+</ParamField>
+
+<ParamField path="--target" type="string">
+  Deployment target: `ec2`, `eks`, `ecs`, `lambda`, `cloudflare-workers`
+</ParamField>
+
+<ParamField path="--instance-type" type="string">
+  EC2 instance type for VM deployments
+</ParamField>
+
+<ParamField path="--new-vpc" type="boolean" default="false">
+  Create a new VPC for the deployment
+</ParamField>
+
+<ParamField path="--enforce-image-deploy" type="boolean" default="false">
+  Force container image deployment (build and push Docker image)
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  AWS profile to use
+</ParamField>
+
+<ParamField path="--gcp-project" type="string">
+  GCP project ID
+</ParamField>
+
+<ParamField path="--azure-subscription" type="string">
+  Azure subscription ID
+</ParamField>
+
+<ParamField path="--ai-profile" type="string">
+  AI provider profile to use for plan generation
+</ParamField>
+
+## Examples
+
+<CodeGroup>
+```bash Basic deployment
+# Generate deployment plan
+clanker deploy https://github.com/user/repo
+
+# Deploy immediately
+clanker deploy https://github.com/user/repo --apply
+```
+
+```bash Target platforms
+# Deploy to EC2
+clanker deploy https://github.com/user/app --target ec2
+
+# Deploy to EKS
+clanker deploy https://github.com/user/app --target eks
+
+# Deploy to Lambda
+clanker deploy https://github.com/user/api --target lambda
+```
+
+```bash Cloud providers
+# Deploy to AWS (default)
+clanker deploy https://github.com/user/app --profile prod
+
+# Deploy to Cloudflare Workers
+clanker deploy https://github.com/user/api --provider cloudflare
+
+# Deploy to GCP
+clanker deploy https://github.com/user/app --provider gcp --gcp-project my-project
+```
+
+```bash Advanced options
+# Deploy with new VPC
+clanker deploy https://github.com/user/app --target ec2 --new-vpc
+
+# Force container deployment
+clanker deploy https://github.com/user/app --enforce-image-deploy --target ecs
+
+# Custom instance type
+clanker deploy https://github.com/user/app --target ec2 --instance-type t3.medium
+```
+</CodeGroup>
+
+## Supported stacks
+
+The deploy command automatically detects:
+- **Node.js**: package.json, npm/yarn/pnpm
+- **Python**: requirements.txt, setup.py, Pipfile
+- **Go**: go.mod, go.sum
+- **Docker**: Dockerfile, docker-compose.yml
+- **Static sites**: HTML/CSS/JS files
+
+## Deployment targets
+
+### AWS
+- **EC2**: Virtual machines with systemd services
+- **EKS**: Kubernetes deployments
+- **ECS**: Container services
+- **Lambda**: Serverless functions
+
+### GCP
+- **Compute Engine**: Virtual machines
+- **GKE**: Kubernetes clusters
+- **Cloud Run**: Containerized services
+- **Cloud Functions**: Serverless functions
+
+### Azure
+- **Virtual Machines**: VM instances
+- **AKS**: Kubernetes clusters
+- **Container Instances**: Containers
+- **Functions**: Serverless functions
+
+### Cloudflare
+- **Workers**: Edge functions
+- **Pages**: Static site hosting
+
+<Note>
+The deployment creates all necessary infrastructure including networking, load balancers, and security groups.
+</Note>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Creating infrastructure" icon="cloud" href="/guides/creating-infrastructure">
+    Learn about maker mode and infrastructure creation
+  </Card>
+  
+  <Card title="Maker mode" icon="wand-magic-sparkles" href="/concepts/maker-mode">
+    Understand plan/apply workflow
+  </Card>
+  
+  <Card title="Multi-cloud" icon="globe" href="/concepts/multi-cloud">
+    Deploy across multiple clouds
+  </Card>
+  
+  <Card title="AWS maker" icon="aws" href="/commands/aws/maker">
+    Advanced AWS infrastructure creation
+  </Card>
+</CardGroup>

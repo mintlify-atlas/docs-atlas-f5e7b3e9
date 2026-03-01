@@ -1,0 +1,146 @@
+---
+title: github
+description: Query GitHub repository information directly
+---
+
+Query your GitHub repository information without AI interpretation.
+
+## Usage
+
+```bash
+clanker github <subcommand> [flags]
+```
+
+## Configuration
+
+Configure GitHub repositories in `~/.clanker.yaml`:
+
+```yaml
+github:
+  token: "ghp_..."              # GitHub personal access token
+  default_repo: infrastructure   # Default repository
+  repos:
+    - owner: your-username
+      repo: infrastructure
+      description: Infrastructure repository
+    - owner: your-username
+      repo: services
+      description: Services and database schemas
+```
+
+<Note>
+The GitHub token is optional for public repositories but required for private repos and higher rate limits.
+</Note>
+
+## Subcommands
+
+### list
+
+List GitHub resources.
+
+```bash
+clanker github list <resource-type> [flags]
+```
+
+**Resource types:**
+- `repos` - Configured GitHub repositories
+- `workflows` - GitHub Actions workflows
+- `runs` - Recent workflow runs
+- `prs` - Recent pull requests
+
+**Flags:**
+
+<ParamField path="--repo" type="string">
+  Repository name (uses default if not specified)
+</ParamField>
+
+<ParamField path="--owner" type="string">
+  Repository owner/organization
+</ParamField>
+
+#### Examples
+
+<CodeGroup>
+```bash List resources
+# List configured repos
+clanker github list repos
+
+# List workflows
+clanker github list workflows --repo infrastructure
+
+# List recent workflow runs
+clanker github list runs --repo services
+
+# List pull requests
+clanker github list prs --repo infrastructure
+```
+</CodeGroup>
+
+### status
+
+Check GitHub Actions workflow status.
+
+```bash
+clanker github status [flags]
+```
+
+**Flags:**
+
+<ParamField path="--repo" type="string">
+  Repository name
+</ParamField>
+
+<ParamField path="--owner" type="string">
+  Repository owner
+</ParamField>
+
+<ParamField path="--workflow" type="string">
+  Specific workflow name or ID
+</ParamField>
+
+#### Examples
+
+```bash
+# Check all workflow statuses
+clanker github status --repo infrastructure
+
+# Check specific workflow
+clanker github status --repo services --workflow "CI/CD"
+```
+
+## Integration with ask command
+
+For natural language queries about GitHub, use the `ask` command:
+
+```bash
+# AI-powered GitHub queries
+clanker ask --github "What's the status of CI workflows?"
+clanker ask --github "Show me failed workflow runs"
+clanker ask --github "List open pull requests"
+```
+
+See the [GitHub integration guide](/integrations/github) for more details.
+
+## Output format
+
+By default, commands output human-readable tables. For JSON output:
+
+```bash
+clanker github list workflows --repo infrastructure --format json
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub integration" icon="github" href="/integrations/github">
+    Learn about GitHub integration features
+  </Card>
+  
+  <Card title="Ask command" icon="message-question" href="/commands/ask">
+    Natural language GitHub queries
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure GitHub repositories
+  </Card>
+</CardGroup>

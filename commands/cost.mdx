@@ -1,0 +1,200 @@
+---
+title: cost
+description: View and analyze cloud infrastructure costs
+---
+
+View and analyze cost data directly from cloud provider APIs.
+
+## Overview
+
+The `cost` command fetches real cost data using your configured cloud credentials:
+- **AWS**: Uses Cost Explorer API with your AWS profile/credentials
+- **GCP**: Uses Cloud Billing API (coming soon)
+- **Azure**: Uses Cost Management API (coming soon)
+- **Cloudflare**: Uses Analytics API (coming soon)
+
+## Usage
+
+```bash
+clanker cost [subcommand] [flags]
+```
+
+Running `clanker cost` without a subcommand defaults to showing the cost summary.
+
+## Global flags
+
+<ParamField path="--provider" type="string" default="all">
+  Filter by provider: `aws`, `gcp`, `azure`, `cloudflare`, `all`
+</ParamField>
+
+<ParamField path="--start" type="string">
+  Start date in YYYY-MM-DD format (default: first day of current month)
+</ParamField>
+
+<ParamField path="--end" type="string">
+  End date in YYYY-MM-DD format (default: today)
+</ParamField>
+
+<ParamField path="--format" type="string" default="table">
+  Output format: `table` or `json`
+</ParamField>
+
+<ParamField path="--top" type="number" default="10">
+  Limit number of results
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  AWS profile to use (default: from `AWS_PROFILE` env)
+</ParamField>
+
+## Subcommands
+
+### summary
+
+Display a summary of costs across all configured providers.
+
+```bash
+clanker cost summary
+clanker cost summary --provider aws
+clanker cost summary --start 2024-01-01 --end 2024-01-31
+```
+
+Shows:
+- Total cost
+- Per-provider breakdown
+- Top services
+- Forecast
+
+### detail
+
+Show detailed cost breakdown by service.
+
+```bash
+clanker cost detail
+clanker cost detail --provider aws --top 20
+```
+
+### trend
+
+Display cost trends over time.
+
+```bash
+clanker cost trend
+clanker cost trend --start 2024-01-01
+```
+
+### forecast
+
+Show cost forecast for upcoming periods.
+
+```bash
+clanker cost forecast
+clanker cost forecast --provider aws
+```
+
+### anomalies
+
+Detect cost anomalies and unusual spending patterns.
+
+```bash
+clanker cost anomalies
+```
+
+### tags
+
+Analyze costs by resource tags.
+
+```bash
+clanker cost tags
+clanker cost tags --key Environment
+```
+
+**Flags:**
+
+<ParamField path="--key" type="string">
+  Filter by specific tag key
+</ParamField>
+
+### export
+
+Export cost data to CSV or JSON file.
+
+```bash
+clanker cost export --output costs.csv
+clanker cost export --output costs.json --format json
+clanker cost export --output costs.csv --group-by service
+```
+
+**Flags:**
+
+<ParamField path="--output" type="string" required>
+  Output file path
+</ParamField>
+
+<ParamField path="--group-by" type="string" default="provider">
+  Group by: `provider`, `service`, or `tag`
+</ParamField>
+
+### llm
+
+Use AI to analyze costs and provide insights.
+
+```bash
+clanker cost llm
+```
+
+## Examples
+
+<CodeGroup>
+```bash Basic usage
+# Show cost summary for all providers
+clanker cost
+
+# AWS costs only
+clanker cost --provider aws
+```
+
+```bash Time ranges
+# Costs for January 2024
+clanker cost summary --start 2024-01-01 --end 2024-01-31
+
+# Last 7 days trend
+clanker cost trend --start $(date -d '7 days ago' +%Y-%m-%d)
+```
+
+```bash Service breakdown
+# Top 20 AWS services by cost
+clanker cost detail --provider aws --top 20
+
+# Export to CSV grouped by service
+clanker cost export --output monthly-costs.csv --group-by service
+```
+
+```bash Tag analysis
+# Costs by Environment tag
+clanker cost tags --key Environment
+
+# All tag-based costs
+clanker cost tags
+```
+</CodeGroup>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Cost analysis guide" icon="chart-pie" href="/guides/cost-analysis">
+    Learn cost optimization strategies
+  </Card>
+  
+  <Card title="Cost optimization" icon="dollar-sign" href="/guides/cost-optimization">
+    Best practices for reducing costs
+  </Card>
+  
+  <Card title="Monitoring resources" icon="chart-line" href="/guides/monitoring-resources">
+    Track resource usage and costs
+  </Card>
+  
+  <Card title="Multi-environment" icon="network-wired" href="/guides/multi-environment">
+    Manage costs across environments
+  </Card>
+</CardGroup>

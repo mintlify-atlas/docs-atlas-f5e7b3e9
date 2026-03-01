@@ -97,7 +97,12 @@
               "commands/ask",
               "commands/k8s",
               "commands/config",
-              "commands/credentials"
+              "commands/credentials",
+              "commands/cost",
+              "commands/deploy",
+              "commands/github",
+              "commands/terraform",
+              "commands/postgres"
             ]
           },
           {

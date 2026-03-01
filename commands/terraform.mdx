@@ -1,0 +1,136 @@
+---
+title: terraform
+description: Terraform workspace operations
+---
+
+Perform operations on Terraform workspaces configured in your Clanker configuration.
+
+## Usage
+
+```bash
+clanker terraform <subcommand> [flags]
+```
+
+## Configuration
+
+Configure Terraform workspaces in `~/.clanker.yaml`:
+
+```yaml
+terraform:
+  default_workspace: dev
+  workspaces:
+    dev:
+      path: ~/infrastructure/terraform/dev
+      description: Development infrastructure
+    staging:
+      path: ~/infrastructure/terraform/staging
+      description: Staging infrastructure
+    prod:
+      path: ~/infrastructure/terraform/prod
+      description: Production infrastructure
+```
+
+<Info>
+Paths support environment variable expansion and tilde (`~`) for home directory.
+</Info>
+
+## Subcommands
+
+### list
+
+List all Terraform workspaces configured in your Clanker configuration.
+
+```bash
+clanker terraform list
+```
+
+**Output example:**
+
+```
+Available Terraform Workspaces (default: dev):
+
+  dev (default)
+    Path: /home/user/infrastructure/terraform/dev
+    Description: Development infrastructure
+
+  staging
+    Path: /home/user/infrastructure/terraform/staging
+    Description: Staging infrastructure
+
+  prod
+    Path: /home/user/infrastructure/terraform/prod
+    Description: Production infrastructure
+```
+
+## Integration with ask command
+
+For AI-powered Terraform queries, use the `ask` command with the `--terraform` flag:
+
+```bash
+# Query Terraform state
+clanker ask --terraform "What resources are in the dev workspace?"
+
+# Check for drift
+clanker ask --terraform "Are there any changes between state and actual infrastructure?"
+
+# Get outputs
+clanker ask --terraform "What are the outputs from the prod workspace?"
+
+# Plan analysis
+clanker ask --terraform "What would happen if I apply this plan?"
+```
+
+### Combined queries
+
+You can combine Terraform queries with AWS queries to detect drift:
+
+```bash
+clanker ask --aws --terraform "Compare actual AWS resources with Terraform state"
+```
+
+See the [Terraform integration guide](/integrations/terraform) for more details.
+
+## Terraform operations
+
+While the `terraform list` command shows configured workspaces, the `ask` command can perform actual Terraform operations:
+
+- **State queries**: Read current Terraform state
+- **Plan analysis**: Analyze what would change
+- **Output retrieval**: Get Terraform outputs
+- **Drift detection**: Compare state with actual infrastructure
+
+<Warning>
+Clanker does not execute `terraform apply` automatically. It only reads state and plans.
+</Warning>
+
+## Workspace selection
+
+When using `--terraform`, Clanker uses the default workspace unless you specify otherwise in your query:
+
+```bash
+# Uses default workspace (dev)
+clanker ask --terraform "Show current state"
+
+# Specify workspace in the query
+clanker ask --terraform "Show state from prod workspace"
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Terraform integration" icon="code-branch" href="/integrations/terraform">
+    Learn about Terraform integration
+  </Card>
+  
+  <Card title="Ask command" icon="message-question" href="/commands/ask">
+    Natural language infrastructure queries
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure Terraform workspaces
+  </Card>
+  
+  <Card title="Multi-environment" icon="network-wired" href="/guides/multi-environment">
+    Manage multiple environments
+  </Card>
+</CardGroup>
