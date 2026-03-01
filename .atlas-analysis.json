@@ -1,0 +1,183 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Clanker",
+  "projectDescription": "AI-powered DevOps CLI for autonomous cloud infrastructure management and operations",
+  "theme": "aspen",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#60A5FA",
+  "darkColor": "#2563EB",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/ai-agents",
+              "concepts/natural-language",
+              "concepts/maker-mode",
+              "concepts/multi-cloud"
+            ]
+          },
+          {
+            "group": "AWS",
+            "pages": [
+              "aws/overview",
+              "aws/ask-mode",
+              "aws/maker-apply",
+              "aws/services"
+            ]
+          },
+          {
+            "group": "Kubernetes",
+            "pages": [
+              "kubernetes/overview",
+              "kubernetes/cluster-management",
+              "kubernetes/deployments",
+              "kubernetes/ask-mode",
+              "kubernetes/monitoring"
+            ]
+          },
+          {
+            "group": "Cloud Providers",
+            "pages": [
+              "providers/gcp",
+              "providers/azure",
+              "providers/cloudflare"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/github",
+              "integrations/terraform",
+              "integrations/iam"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/agent-architecture",
+              "advanced/debugging",
+              "advanced/backend-api",
+              "advanced/custom-profiles"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Command Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/overview",
+              "commands/ask",
+              "commands/k8s",
+              "commands/config",
+              "commands/credentials"
+            ]
+          },
+          {
+            "group": "AWS Commands",
+            "pages": [
+              "commands/aws/overview",
+              "commands/aws/maker",
+              "commands/aws/apply"
+            ]
+          },
+          {
+            "group": "Kubernetes Commands",
+            "pages": [
+              "commands/k8s/create",
+              "commands/k8s/delete",
+              "commands/k8s/deploy",
+              "commands/k8s/logs",
+              "commands/k8s/stats",
+              "commands/k8s/ask"
+            ]
+          },
+          {
+            "group": "Cloudflare Commands",
+            "pages": [
+              "commands/cloudflare/overview",
+              "commands/cloudflare/deploy",
+              "commands/cloudflare/ask"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Tutorials",
+            "pages": [
+              "guides/first-query",
+              "guides/creating-infrastructure",
+              "guides/kubernetes-setup",
+              "guides/monitoring-resources"
+            ]
+          },
+          {
+            "group": "Use Cases",
+            "pages": [
+              "guides/troubleshooting-lambdas",
+              "guides/kubernetes-debugging",
+              "guides/cost-analysis",
+              "guides/security-audit"
+            ]
+          },
+          {
+            "group": "Best Practices",
+            "pages": [
+              "guides/security",
+              "guides/cost-optimization",
+              "guides/multi-environment"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered natural language queries for cloud infrastructure",
+    "Multi-cloud support (AWS, GCP, Azure, Cloudflare)",
+    "Kubernetes cluster management (EKS, GKE, kubeadm)",
+    "Maker mode for infrastructure provisioning with plan/apply workflow",
+    "Autonomous agent system with LLM-powered decision trees",
+    "Real-time resource monitoring and cost analysis",
+    "GitHub Actions and repository integration",
+    "Terraform workspace management",
+    "Intelligent error remediation and retry logic"
+  ],
+  "publicApiSurface": [
+    "clanker ask",
+    "clanker k8s create eks",
+    "clanker k8s create gke",
+    "clanker k8s create kubeadm",
+    "clanker k8s delete",
+    "clanker k8s deploy",
+    "clanker k8s logs",
+    "clanker k8s stats",
+    "clanker k8s ask",
+    "clanker config init",
+    "clanker config show",
+    "clanker credentials store",
+    "clanker aws",
+    "clanker gcp",
+    "clanker azure",
+    "clanker cf ask",
+    "clanker cf deploy"
+  ]
+}
