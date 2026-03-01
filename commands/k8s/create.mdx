@@ -1,0 +1,214 @@
+---
+title: clanker k8s create
+description: Create a Kubernetes cluster on EKS, GKE, or using kubeadm
+---
+
+Create a new Kubernetes cluster on Amazon EKS, Google Kubernetes Engine (GKE), or using kubeadm on EC2 instances.
+
+## Subcommands
+
+### eks
+
+Create an Amazon EKS cluster.
+
+```bash
+clanker k8s create eks [cluster-name] [flags]
+```
+
+<ParamField path="cluster-name" type="string" required>
+  Name of the EKS cluster to create
+</ParamField>
+
+**Flags**
+
+<ParamField path="--nodes" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="t3.small">
+  EC2 instance type for nodes
+</ParamField>
+
+<ParamField path="--version" type="string" default="1.29">
+  Kubernetes version
+</ParamField>
+
+<ParamField path="--plan" type="boolean">
+  Show plan without applying changes
+</ParamField>
+
+<ParamField path="--apply" type="boolean">
+  Apply the plan without confirmation prompt
+</ParamField>
+
+**Examples**
+
+```bash
+# Create an EKS cluster with 2 nodes
+clanker k8s create eks my-cluster --nodes 2 --node-type t3.small
+```
+
+```bash
+# Show plan only without creating
+clanker k8s create eks my-cluster --plan
+```
+
+<CodeGroup>
+```bash Output
+[k8s] creating EKS cluster 'my-cluster'...
+
+=== Cluster Created Successfully ===
+
+Name:       my-cluster
+Status:     ACTIVE
+Endpoint:   https://ABC123.gr7.us-east-1.eks.amazonaws.com
+Version:    1.29
+
+Connection:
+  Kubeconfig: ~/.kube/config
+  
+Commands:
+  kubectl get nodes
+  kubectl get pods -A
+```
+</CodeGroup>
+
+### gke
+
+Create a Google Kubernetes Engine (GKE) cluster.
+
+```bash
+clanker k8s create gke [cluster-name] [flags]
+```
+
+<ParamField path="cluster-name" type="string" required>
+  Name of the GKE cluster to create
+</ParamField>
+
+**Flags**
+
+<ParamField path="--gcp-project" type="string" required>
+  GCP project ID (required)
+</ParamField>
+
+<ParamField path="--gcp-region" type="string" default="us-central1">
+  GCP region for the cluster
+</ParamField>
+
+<ParamField path="--nodes" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="e2-standard-2">
+  GCE machine type for nodes
+</ParamField>
+
+<ParamField path="--version" type="string">
+  Kubernetes version (default: GKE default)
+</ParamField>
+
+<ParamField path="--preemptible" type="boolean">
+  Use preemptible VMs for nodes
+</ParamField>
+
+<ParamField path="--plan" type="boolean">
+  Show plan without applying changes
+</ParamField>
+
+<ParamField path="--apply" type="boolean">
+  Apply the plan without confirmation prompt
+</ParamField>
+
+**Examples**
+
+```bash
+# Create a GKE cluster with 2 nodes
+clanker k8s create gke my-cluster --gcp-project my-project --nodes 2 --node-type e2-standard-2
+```
+
+```bash
+# Show plan for GKE cluster creation
+clanker k8s create gke my-cluster --gcp-project my-project --gcp-region us-central1 --plan
+```
+
+### kubeadm
+
+Create a kubeadm-based Kubernetes cluster on EC2 instances.
+
+```bash
+clanker k8s create kubeadm [cluster-name] [flags]
+```
+
+<ParamField path="cluster-name" type="string" required>
+  Name of the kubeadm cluster to create
+</ParamField>
+
+**Flags**
+
+<ParamField path="--workers" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="t3.small">
+  EC2 instance type for nodes
+</ParamField>
+
+<ParamField path="--key-pair" type="string">
+  AWS key pair name for SSH access (auto-creates if not exists)
+</ParamField>
+
+<ParamField path="--ssh-key" type="string">
+  Path to SSH private key (default: ~/.ssh/&lt;key-pair&gt;)
+</ParamField>
+
+<ParamField path="--version" type="string" default="1.29">
+  Kubernetes version
+</ParamField>
+
+<ParamField path="--plan" type="boolean">
+  Show plan without applying changes
+</ParamField>
+
+<ParamField path="--apply" type="boolean">
+  Apply the plan without confirmation prompt
+</ParamField>
+
+**Examples**
+
+```bash
+# Create a kubeadm cluster with 1 worker
+clanker k8s create kubeadm my-cluster --workers 1 --key-pair my-key
+```
+
+```bash
+# Show plan only
+clanker k8s create kubeadm my-cluster --plan
+```
+
+<CodeGroup>
+```bash Output
+[k8s] checking SSH key configuration...
+[k8s] creating kubeadm cluster 'my-cluster'...
+
+=== Cluster Created Successfully ===
+
+Name:       my-cluster
+Status:     ACTIVE
+Endpoint:   10.0.1.100:6443
+Version:    1.29
+
+Control Plane:
+  ip-10-0-1-100: 10.0.1.100 (Public: 54.123.45.67)
+
+Workers:
+  ip-10-0-1-101: 10.0.1.101 (Public: 54.123.45.68)
+
+Connection:
+  Kubeconfig: /home/user/.kube/my-cluster-config
+  
+Commands:
+  kubectl get nodes
+  kubectl get pods -A
+  export KUBECONFIG=/home/user/.kube/my-cluster-config
+```
+</CodeGroup>

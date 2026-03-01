@@ -1,0 +1,494 @@
+---
+title: Maker mode
+description: Generate and execute infrastructure plans using natural language with Clanker's plan/apply workflow
+---
+
+Maker mode transforms natural language descriptions into executable cloud infrastructure plans. It follows a **plan-then-apply** workflow inspired by Terraform, but uses native cloud provider CLIs (AWS, GCP, Azure, Cloudflare).
+
+## How it works
+
+Maker mode operates in two phases:
+
+<Steps>
+  <Step title="Plan: Generate CLI commands">
+    An LLM converts your natural language request into a JSON plan containing sequential CLI commands.
+    
+    ```bash
+    clanker ask --maker "Deploy a Lambda function for processing images"
+    ```
+  </Step>
+  
+  <Step title="Apply: Execute the plan">
+    After review, execute the plan to create resources:
+    
+    ```bash
+    clanker ask --apply < plan.json
+    ```
+  </Step>
+</Steps>
+
+## Plan structure
+
+A plan is a JSON document with this schema:
+
+<CodeGroup>
+```json Example plan
+{
+  "version": 1,
+  "createdAt": "2026-03-01T10:30:00Z",
+  "provider": "aws",
+  "question": "Create an S3 bucket for logs",
+  "summary": "Creates an S3 bucket with server-side encryption",
+  "commands": [
+    {
+      "args": ["s3api", "create-bucket", "--bucket", "my-logs-<DEPLOY_ID>", "--region", "us-east-1"],
+      "reason": "Create the S3 bucket",
+      "produces": {"BUCKET_NAME": "$.Location"}
+    },
+    {
+      "args": ["s3api", "put-bucket-encryption", "--bucket", "<BUCKET_NAME>", "--server-side-encryption-configuration", "{...}"],
+      "reason": "Enable encryption at rest"
+    }
+  ],
+  "notes": ["Bucket name includes unique deploy ID to avoid conflicts"]
+}
+```
+
+```go Plan schema (internal/maker/plan.go:15-29)
+type Plan struct {
+    Version   int       `json:"version"`
+    CreatedAt time.Time `json:"createdAt"`
+    Provider  string    `json:"provider,omitempty"`
+    Question  string    `json:"question"`
+    Summary   string    `json:"summary"`
+    Commands  []Command `json:"commands"`
+    Notes     []string  `json:"notes,omitempty"`
+}
+
+type Command struct {
+    Args     []string          `json:"args"`
+    Reason   string            `json:"reason,omitempty"`
+    Produces map[string]string `json:"produces,omitempty"`
+}
+```
+</CodeGroup>
+
+### Key fields
+
+- **version**: Plan format version (currently `1`)
+- **provider**: Cloud provider (`aws`, `gcp`, `azure`, `cloudflare`)
+- **commands**: Ordered array of CLI commands to execute
+- **produces**: Maps output values to placeholders (e.g., resource IDs)
+- **notes**: Human-readable explanations
+
+## Placeholders
+
+Placeholders are variables that get resolved during execution:
+
+### Static placeholders
+
+- `<DEPLOY_ID>`: Unique identifier for this deployment
+- `<REGION>`: AWS region
+- `<ACCOUNT_ID>`: AWS account ID
+- `<APP_PORT>`: Application port (inferred from target group)
+
+### Dynamic placeholders
+
+Commands can produce values for later use:
+
+```json
+{
+  "args": ["ec2", "create-vpc", "--cidr-block", "10.0.0.0/16"],
+  "produces": {"VPC_ID": "$.Vpc.VpcId"}
+}
+```
+
+Now `<VPC_ID>` can be used in subsequent commands:
+
+```json
+{
+  "args": ["ec2", "create-subnet", "--vpc-id", "<VPC_ID>", "--cidr-block", "10.0.1.0/24"]
+}
+```
+
+<CodeGroup>
+```go Placeholder substitution (internal/maker/exec.go:1216-1238)
+func applyPlanBindings(args []string, bindings map[string]string) []string {
+    if len(args) == 0 || len(bindings) == 0 {
+        return args
+    }
+    out := make([]string, 0, len(args))
+    for _, a := range args {
+        if !strings.Contains(a, "<") || !strings.Contains(a, ">") {
+            out = append(out, a)
+            continue
+        }
+        rewritten := planPlaceholderTokenRe.ReplaceAllStringFunc(a, func(m string) string {
+            key := strings.TrimSuffix(strings.TrimPrefix(m, "<"), ">")
+            if v, ok := bindings[key]; ok && strings.TrimSpace(v) != "" {
+                return v
+            }
+            return m
+        })
+        out = append(out, rewritten)
+    }
+    // fix: if --role-name got an ARN, extract just the role name
+    out = fixRoleNameArg(out)
+    return out
+}
+```
+</CodeGroup>
+
+## Execution flow
+
+When you run `clanker ask --apply`, this happens:
+
+<Steps>
+  <Step title="Parse plan">
+    Load and validate the JSON plan.
+    
+    ```go internal/maker/plan.go:31-82
+    func ParsePlan(raw string) (*Plan, error) {
+        trimmed := strings.TrimSpace(raw)
+        if trimmed == "" {
+            return nil, fmt.Errorf("empty plan")
+        }
+
+        var p Plan
+        if err := json.Unmarshal([]byte(trimmed), &p); err != nil {
+            // Try accepting alternative shapes the LLM sometimes returns
+            wrapped, wrapErr := parsePlanFromAlternativeShapes(trimmed)
+            if wrapErr == nil {
+                p = *wrapped
+            } else {
+                return nil, err
+            }
+        }
+
+        if len(p.Commands) == 0 {
+            return nil, fmt.Errorf("plan has no commands")
+        }
+
+        // Normalize args
+        for i := range p.Commands {
+            p.Commands[i].Args = normalizeArgs(p.Commands[i].Args)
+            if len(p.Commands[i].Args) == 0 {
+                return nil, fmt.Errorf("command %d has empty args", i)
+            }
+        }
+
+        return &p, nil
+    }
+    ```
+  </Step>
+  
+  <Step title="Resolve AWS context">
+    Determine profile, region, and account ID.
+  </Step>
+  
+  <Step title="Execute commands sequentially">
+    For each command:
+    1. Substitute placeholders
+    2. Run the AWS/GCP/Azure/Cloudflare CLI command
+    3. Learn bindings from output (via `produces` field)
+    4. Handle failures with AI-powered retries
+  </Step>
+  
+  <Step title="Wait for async operations">
+    CloudFormation stacks and other long-running operations are automatically polled until completion.
+  </Step>
+  
+  <Step title="Post-deployment fixes">
+    If targets are unhealthy or services fail to start, Clanker runs diagnostics via SSM and applies remediation automatically.
+  </Step>
+</Steps>
+
+<CodeGroup>
+```go Execution loop (internal/maker/exec.go:327-506)
+for idx, cmdSpec := range plan.Commands {
+    if resumeFromIndex > 0 && idx < resumeFromIndex {
+        _, _ = fmt.Fprintf(opts.Writer, "[maker][checkpoint] skipping already-completed command %d/%d\n", idx+1, len(plan.Commands))
+        continue
+    }
+    _, _ = fmt.Fprintf(opts.Writer, "[maker][checkpoint] start command %d/%d\n", idx+1, len(plan.Commands))
+
+    if err := validateCommand(cmdSpec.Args, opts.Destroyer); err != nil {
+        _ = maybeSwarmDiagnose(ctx, opts, "preflight: command rejected", cmdSpec.Args, err.Error(), bindings)
+        return fmt.Errorf("command %d rejected: %w", idx+1, err)
+    }
+
+    args := make([]string, 0, len(cmdSpec.Args)+6)
+    args = append(args, cmdSpec.Args...)
+    args = substituteAccountID(args, accountID)
+    args = applyPlanBindings(args, bindings)
+
+    // ... (handle special cases like Lambda zip, EC2 user-data, etc.)
+
+    awsArgs := buildAWSExecArgs(args, opts, opts.Writer)
+
+    _, _ = fmt.Fprintf(opts.Writer, "[maker] running %d/%d: %s\n", idx+1, len(plan.Commands), formatAWSArgsForLog(awsArgs))
+
+    out, runErr := runAWSCommandStreaming(ctx, awsArgs, zipBytes, opts.Writer)
+    if runErr != nil {
+        if handled, handleErr := handleAWSFailure(ctx, plan, opts, idx, args, awsArgs, zipBytes, out, runErr, remediationAttempted, bindings, healPolicy, healRuntime); handled {
+            if handleErr != nil {
+                return handleErr
+            }
+            // Retry succeeded
+            continue
+        }
+        return fmt.Errorf("aws command %d failed: %w", idx+1, runErr)
+    }
+
+    // Learn placeholder bindings from successful command outputs.
+    learnPlanBindingsFromProduces(cmdSpec.Produces, out, bindings)
+    learnPlanBindings(args, out, bindings)
+    bindings["CHECKPOINT_LAST_SUCCESS_INDEX"] = strconv.Itoa(idx + 1)
+
+    // CloudFormation is async. If we just created/updated a stack, wait for it to complete.
+    if len(args) >= 2 && args[0] == "cloudformation" && (args[1] == "create-stack" || args[1] == "update-stack") {
+        stackName := strings.TrimSpace(flagValue(args, "--stack-name"))
+        if stackName != "" {
+            status, details, waitErr := waitForCloudFormationStackTerminal(ctx, opts, stackName, opts.Writer)
+            if waitErr != nil {
+                return fmt.Errorf("cloudformation wait failed for %s: %w", stackName, waitErr)
+            }
+            if !isCloudFormationStackSuccess(status) {
+                // ... (handle failure with AI retry)
+            }
+        }
+    }
+
+    _, _ = fmt.Fprintf(opts.Writer, "[maker][checkpoint] success command %d/%d\n", idx+1, len(plan.Commands))
+}
+```
+</CodeGroup>
+
+## AI-powered error handling
+
+When a command fails, Clanker uses **agentic fixes** to automatically retry:
+
+### How it works
+
+1. **Analyze failure**: Send the error output to an LLM
+2. **Propose fix**: LLM returns a `agenticFix` JSON object
+3. **Apply fix**: Execute pre-commands, update bindings, or rewrite args
+4. **Retry**: Run the fixed command
+5. **Exponential backoff**: Retry up to 3 times with increasing delays
+
+<CodeGroup>
+```go Agentic fix structure (internal/maker/agentic_fix.go:14-26)
+type agenticFix struct {
+    // RewrittenArgs: if non-nil, use these args instead of the original
+    RewrittenArgs []string `json:"rewritten_args,omitempty"`
+    // PreCommands: commands to run before retrying the original
+    PreCommands []Command `json:"pre_commands,omitempty"`
+    // Bindings: new placeholder bindings discovered
+    Bindings map[string]string `json:"bindings,omitempty"`
+    // Skip: if true, skip this command (it's already done or not needed)
+    Skip bool `json:"skip,omitempty"`
+    // Notes: explanation
+    Notes []string `json:"notes,omitempty"`
+}
+```
+
+```go Retry loop (internal/maker/agentic_fix.go:93-196)
+for attempt := 1; attempt <= maxAttempts; attempt++ {
+    // Exponential backoff: 1s, 2s, 4s
+    if attempt > 1 {
+        backoff := time.Duration(math.Pow(2, float64(attempt-1))) * time.Second
+        _, _ = fmt.Fprintf(opts.Writer, "[maker] agentic retry %d/%d after %v...\n", attempt, maxAttempts, backoff)
+        select {
+        case <-ctx.Done():
+            return false, ctx.Err()
+        case <-time.After(backoff):
+        }
+    }
+
+    _, _ = fmt.Fprintf(opts.Writer, "[maker] asking AI to fix failed command (attempt %d/%d)...\n", attempt, maxAttempts)
+
+    fix, fixErr := getAgenticFix(ctx, opts, args, errorOutput, bindings)
+    if fixErr != nil {
+        lastErr = fixErr
+        _, _ = fmt.Fprintf(opts.Writer, "[maker] AI fix error: %v\n", fixErr)
+        continue
+    }
+
+    if fix == nil {
+        _, _ = fmt.Fprintf(opts.Writer, "[maker] AI returned no fix\n")
+        continue
+    }
+
+    // Handle skip
+    if fix.Skip {
+        _, _ = fmt.Fprintf(opts.Writer, "[maker] AI says: skip this command (already done)\n")
+        return true, nil
+    }
+
+    // Apply new bindings
+    if len(fix.Bindings) > 0 {
+        for k, v := range fix.Bindings {
+            if strings.TrimSpace(v) == "" {
+                continue
+            }
+            bindings[k] = v
+            _, _ = fmt.Fprintf(opts.Writer, "[maker] AI binding: %s = %s\n", k, v)
+        }
+    }
+
+    // Run pre-commands
+    if len(fix.PreCommands) > 0 {
+        _, _ = fmt.Fprintf(opts.Writer, "[maker] running %d AI-proposed pre-commands...\n", len(fix.PreCommands))
+        for i, cmd := range fix.PreCommands {
+            cmdArgs := buildAWSExecArgs(cmd.Args, opts, opts.Writer)
+            out, runErr := runAWSCommandStreaming(ctx, cmdArgs, nil, opts.Writer)
+            if runErr != nil {
+                _, _ = fmt.Fprintf(opts.Writer, "[maker] pre-command %d failed: %v\n", i+1, runErr)
+                continue
+            }
+            // Learn from pre-command output
+            learnPlanBindings(cmd.Args, out, bindings)
+        }
+    }
+
+    // Determine which args to use for retry
+    retryArgs := args
+    if len(fix.RewrittenArgs) > 0 {
+        retryArgs = fix.RewrittenArgs
+        _, _ = fmt.Fprintf(opts.Writer, "[maker] using AI-rewritten command\n")
+    }
+
+    // Re-apply bindings (in case we got new ones)
+    retryArgs = applyPlanBindings(retryArgs, bindings)
+
+    // Build final AWS args
+    finalArgs := buildAWSExecArgs(retryArgs, opts, opts.Writer)
+
+    _, _ = fmt.Fprintf(opts.Writer, "[maker] retrying: %s\n", formatAWSArgsForLog(finalArgs))
+
+    out, retryErr := runAWSCommandStreaming(ctx, finalArgs, stdinBytes, opts.Writer)
+    if retryErr == nil {
+        // Success! Learn from output
+        learnPlanBindings(retryArgs, out, bindings)
+        return true, nil
+    }
+
+    // Still failed - update error for next attempt
+    errorOutput = out
+    _, _ = fmt.Fprintf(opts.Writer, "[maker] retry failed: %v\n", retryErr)
+    lastErr = retryErr
+}
+```
+</CodeGroup>
+
+### Common fixes
+
+| Error | AI Fix |
+|-------|--------|
+| `AlreadyExistsException` | Set `skip: true` |
+| `InvalidParameterValue: <PLACEHOLDER>` | Provide `bindings` or `rewritten_args` |
+| `ResourceNotFoundException` | Add `pre_commands` to create missing resource |
+| `AccessDeniedException` | Add IAM policy via `pre_commands` |
+| Invalid role ARN syntax | Extract role name from ARN in `rewritten_args` |
+
+## Checkpointing
+
+Maker mode supports **resumable execution** via durable checkpoints:
+
+- **Automatic**: Checkpoints are saved after each successful command
+- **Resume**: If a plan fails mid-execution, re-run `--apply` to resume from the last checkpoint
+- **Storage**: Checkpoints are stored in `~/.clanker/checkpoints/`
+
+```bash
+# First attempt fails at command 5
+clanker ask --apply < plan.json
+# ... commands 1-4 succeed, command 5 fails
+
+# Fix the issue and resume
+clanker ask --apply < plan.json
+# ... commands 1-4 skipped (already completed), starts at command 5
+```
+
+## Multi-cloud support
+
+Maker mode supports multiple cloud providers:
+
+<Tabs>
+  <Tab title="AWS">
+    Uses the AWS CLI (`aws`).
+    
+    ```bash
+    clanker ask --maker "Create an S3 bucket" --aws
+    ```
+    
+    Provider detection is automatic if your question mentions AWS services.
+  </Tab>
+  
+  <Tab title="GCP">
+    Uses the Google Cloud CLI (`gcloud`).
+    
+    ```bash
+    clanker ask --maker "Deploy a Cloud Run service" --gcp
+    ```
+    
+    Plans have `"provider": "gcp"` and use `gcloud` commands.
+  </Tab>
+  
+  <Tab title="Azure">
+    Uses the Azure CLI (`az`).
+    
+    ```bash
+    clanker ask --maker "Create an App Service" --azure
+    ```
+    
+    Plans have `"provider": "azure"` and use `az` commands.
+  </Tab>
+  
+  <Tab title="Cloudflare">
+    Uses the Cloudflare CLI (`wrangler` and API calls).
+    
+    ```bash
+    clanker ask --maker "Deploy a Cloudflare Worker" --cloudflare
+    ```
+    
+    Plans have `"provider": "cloudflare"` and use `wrangler` or API commands.
+  </Tab>
+</Tabs>
+
+## Examples
+
+### Create a VPC with subnets
+
+```bash
+clanker ask --maker "Create a VPC with public and private subnets in us-east-1" > vpc-plan.json
+clanker ask --apply < vpc-plan.json
+```
+
+### Deploy a Lambda function
+
+```bash
+clanker ask --maker "Create a Lambda function that processes S3 events" > lambda-plan.json
+clanker ask --apply < lambda-plan.json
+```
+
+### Destroy resources
+
+```bash
+clanker ask --maker --destroyer "Delete the VPC and all associated resources" > destroy-plan.json
+clanker ask --apply < destroy-plan.json
+```
+
+<Warning>
+**Destructive mode**: The `--destroyer` flag allows deletion commands. Always review plans before applying!
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-cloud" href="/concepts/multi-cloud" icon="globe">
+    Learn about multi-cloud provider support
+  </Card>
+  <Card title="CLI reference" href="/commands/ask" icon="terminal">
+    Full CLI options for maker mode
+  </Card>
+</CardGroup>

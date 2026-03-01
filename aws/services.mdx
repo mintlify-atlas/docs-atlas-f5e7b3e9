@@ -1,0 +1,715 @@
+---
+title: Service support
+description: Comprehensive AWS service coverage with 50+ services across compute, storage, networking, AI/ML, and more
+---
+
+Clanker supports over 50 AWS services with both query and automation capabilities.
+
+## Service categories
+
+<CardGroup cols={2}>
+  <Card title="Compute" icon="server">
+    EC2, Lambda, ECS, Batch, Auto Scaling
+  </Card>
+  <Card title="Storage" icon="database">
+    S3, EBS, EFS, RDS, DynamoDB
+  </Card>
+  <Card title="Networking" icon="network-wired">
+    VPC, ALB/NLB, Route53, CloudFront
+  </Card>
+  <Card title="AI/ML" icon="brain">
+    Bedrock, SageMaker, Comprehend, Textract
+  </Card>
+</CardGroup>
+
+## Compute services
+
+### EC2 (Elastic Compute Cloud)
+
+**Query operations:**
+
+```bash
+clanker aws list ec2
+clanker ask "Show me running EC2 instances"
+clanker ask "Which instances are stopped?"
+```
+
+**Maker operations:**
+
+```bash
+clanker ask "Launch a t3.medium instance with Amazon Linux 2023" --maker
+```
+
+**Available commands:**
+- `list_ec2_instances` - List instances with state and type
+- `describe_instance` - Detailed info about specific instance
+- `list_launch_templates` - EC2 Launch Templates
+- `list_auto_scaling_groups` - ASG configuration and capacity
+
+From `~/workspace/source/internal/aws/prompts.go:34-41`.
+
+### Lambda (Serverless Functions)
+
+```bash
+clanker aws list lambda
+clanker ask "Show Lambda functions with high error rates"
+clanker ask "What's the runtime for my functions?"
+```
+
+**Maker example:**
+
+```bash
+clanker ask "Create a Python Lambda function that processes S3 events" --maker
+```
+
+**Available operations:**
+- `list_lambda_functions` - Functions with runtime and last modified
+- `describe_lambda_function` - Detailed config including env vars
+- `list_lambda_layers` - Available Lambda layers
+
+From `~/workspace/source/internal/aws/prompts.go:45-49`.
+
+### ECS (Elastic Container Service)
+
+```bash
+clanker aws list ecs
+clanker ask "Show ECS services and their task counts"
+```
+
+**Operations:**
+- `list_ecs_clusters` - Clusters with running services/tasks
+- `describe_ecs_service` - Service configuration and deployments
+
+### AWS Batch
+
+```bash
+clanker aws list batch
+clanker ask "Show batch job status"
+```
+
+**Operations:**
+- `list_batch_jobs` - Jobs with status and queue info
+
+## Container services
+
+### ECR (Elastic Container Registry)
+
+```bash
+clanker aws list ecr
+clanker ask "List ECR repositories"
+```
+
+**Maker integration:**
+
+Clanker automatically creates ECR repositories when deploying containerized apps:
+
+```bash
+clanker ask "Deploy my GitHub repo to ECS" --maker
+```
+
+From `~/workspace/source/internal/maker/exec.go:130-184`, Clanker:
+- Sanitizes repository names
+- Creates repositories with scan-on-push enabled
+- Handles Docker build and push
+
+**Operations:**
+- `list_ecr_repositories` - Repositories with URIs
+- `describe_ecr_repository` - Images and tags
+
+### EKS (Elastic Kubernetes Service)
+
+```bash
+clanker aws list eks
+clanker ask "Show EKS cluster versions"
+```
+
+**Operations:**
+- `list_eks_clusters` - Clusters with Kubernetes version
+- `describe_eks_cluster` - Detailed cluster config
+
+## Storage services
+
+### S3 (Simple Storage Service)
+
+```bash
+clanker aws list s3
+clanker ask "Which S3 buckets are public?"
+clanker ask "Show bucket sizes"
+```
+
+**Operations:**
+- `list_s3_buckets` - Buckets with creation dates
+- `describe_s3_bucket` - Size, objects, and policies
+
+### EBS (Elastic Block Store)
+
+```bash
+clanker aws list ebs
+clanker ask "Show unattached EBS volumes"
+```
+
+**Operations:**
+- `list_ebs_volumes` - Volumes with size and attachment status
+- `describe_ebs_volume` - IOPS, throughput, and snapshots
+
+### EFS (Elastic File System)
+
+```bash
+clanker aws list efs
+clanker ask "List EFS file systems"
+```
+
+**Operations:**
+- `list_efs_filesystems` - File systems with performance mode
+- `describe_efs_filesystem` - Mount targets and access points
+
+## Database services
+
+### RDS (Relational Database Service)
+
+```bash
+clanker aws list rds
+clanker ask "Show RDS instance status"
+clanker ask "Which databases are publicly accessible?"
+```
+
+**Maker example:**
+
+```bash
+clanker ask "Create a PostgreSQL 15 RDS instance with Multi-AZ" --maker
+```
+
+**Operations:**
+- `list_rds_instances` - Instances with engine and status
+- `describe_rds_instance` - Connection info and configuration
+- `list_rds_clusters` - Aurora clusters
+
+From `~/workspace/source/internal/aws/prompts.go:64-67`.
+
+### DynamoDB
+
+```bash
+clanker aws list dynamodb
+clanker ask "Show DynamoDB tables and their capacity"
+```
+
+**Operations:**
+- `list_dynamodb_tables` - Tables with item count
+- `describe_dynamodb_table` - Schema, GSIs, and billing mode
+
+## Networking services
+
+### VPC (Virtual Private Cloud)
+
+```bash
+clanker aws list vpcs
+clanker ask "Show VPC CIDR blocks"
+```
+
+**Operations:**
+- `list_vpcs` - VPCs with CIDR and tags
+- `list_subnets` - Subnets across VPCs
+- `list_route_tables` - Route tables and associations
+
+From `~/workspace/source/internal/aws/prompts.go:71-76`.
+
+### Security Groups
+
+```bash
+clanker aws list security-groups
+clanker ask "Which security groups allow 0.0.0.0/0 access?"
+```
+
+**Operations:**
+- `list_security_groups` - Groups with ingress/egress rules
+- `describe_security_groups` - Detailed rule analysis
+
+### Load Balancers
+
+```bash
+clanker aws list load-balancers
+clanker ask "Show ALB health check status"
+```
+
+**Maker example:**
+
+```bash
+clanker ask "Create an ALB with target group for my EC2 instances" --maker
+```
+
+**Operations:**
+- `describe_load_balancers` - ALB/NLB/CLB with DNS names
+- Target group health status
+
+From `~/workspace/source/internal/maker/prompt.go:75-83`.
+
+### Route53
+
+```bash
+clanker aws list route53
+clanker ask "Show hosted zones"
+```
+
+**Operations:**
+- `list_route53_zones` - Hosted zones with record counts
+
+### CloudFront
+
+```bash
+clanker aws list cloudfront
+clanker ask "List CloudFront distributions"
+```
+
+**Operations:**
+- `list_cloudfront_distributions` - Distributions with origins and status
+
+## Messaging and events
+
+### SQS (Simple Queue Service)
+
+```bash
+clanker aws list sqs
+clanker ask "Show SQS queue depths"
+```
+
+**Service check:**
+
+From `~/workspace/source/internal/aws/llm.go:102-125`:
+
+```go
+case "check_sqs_service":
+    args := []string{"sqs", "list-queues", "--max-items", "1", "--output", "table"}
+    _, err := c.execAWSCLI(ctx, args, profile)
+    if err != nil {
+        return "❌ SQS service not available or no access", nil
+    }
+    queueCountArgs := []string{"sqs", "list-queues", "--output", "json", "--query", "length(QueueUrls)"}
+    countResult, _ := c.execAWSCLI(ctx, queueCountArgs, profile)
+    return fmt.Sprintf("✅ SQS service is available. Queue count: %s", strings.TrimSpace(countResult)), nil
+```
+
+**Operations:**
+- `list_sqs_queues` - Queues with URLs
+- `describe_sqs_queue` - Queue attributes and metrics
+
+From `~/workspace/source/internal/aws/prompts.go:78-82`.
+
+### SNS (Simple Notification Service)
+
+```bash
+clanker aws list sns
+clanker ask "Show SNS topics and subscriptions"
+```
+
+**Operations:**
+- `list_sns_topics` - Topics with ARNs
+- `describe_sns_topic` - Subscriptions and delivery policies
+
+### EventBridge
+
+```bash
+clanker aws list eventbridge
+clanker ask "Show EventBridge rules"
+```
+
+**Operations:**
+- `list_eventbridge_rules` - Rules with schedules and targets
+- `list_eventbridge_buses` - Custom event buses
+
+From `~/workspace/source/internal/aws/prompts.go:83-85`.
+
+## Monitoring and logs
+
+### CloudWatch Logs
+
+```bash
+clanker aws list logs
+clanker ask "Show me the last error from Lambda"
+clanker ask "Get recent logs for my API"
+```
+
+**Automatic error retrieval:**
+
+From `~/workspace/source/internal/aws/client.go:273-283`:
+
+```go
+if strings.Contains(questionLower, "error") || strings.Contains(questionLower, "last error") {
+    errorLogs, err := c.getRecentErrorLogs(ctx, questionLower)
+    if err != nil {
+        context.WriteString(fmt.Sprintf("Note: Could not fetch recent error logs: %v\n\n", err))
+    } else if errorLogs != "" {
+        context.WriteString("Recent Error Logs:\n")
+        context.WriteString(errorLogs)
+    }
+}
+```
+
+**Operations:**
+- `get_recent_logs` - Recent CloudWatch logs
+- `list_log_groups` - Log groups with retention
+
+### CloudWatch Alarms
+
+```bash
+clanker aws list alarms
+clanker ask "Show alarms in ALARM state"
+```
+
+**Operations:**
+- `list_cloudwatch_alarms` - Alarms with state
+- `describe_cloudwatch_metrics` - Metrics for resources
+
+## Security and IAM
+
+### IAM (Identity and Access Management)
+
+```bash
+clanker aws list iam-roles
+clanker aws list iam-users
+clanker ask "Show IAM roles used by Lambda"
+```
+
+<Note>
+IAM queries return names only, not sensitive policy data.
+</Note>
+
+**Operations:**
+- `list_iam_roles` - Role names
+- `list_iam_groups` - Group names
+- `list_iam_users` - User names
+
+From `~/workspace/source/internal/aws/prompts.go:93-95`.
+
+### KMS (Key Management Service)
+
+```bash
+clanker aws list kms
+clanker ask "List KMS keys"
+```
+
+**Operations:**
+- `list_kms_keys` - Encryption keys
+- `describe_kms_key` - Key policies and grants
+
+### Secrets Manager
+
+```bash
+clanker aws list secrets
+clanker ask "Show secrets rotation status"
+```
+
+**Operations:**
+- `list_secrets` - Secret names (values not exposed)
+
+### ACM (Certificate Manager)
+
+```bash
+clanker aws list certificates
+clanker ask "Show SSL certificates expiring soon"
+```
+
+**Operations:**
+- `list_acm_certificates` - Certificates with status
+- `describe_acm_certificate` - Validation and domains
+
+## DevOps services
+
+### CodeBuild
+
+```bash
+clanker aws list codebuild
+clanker ask "Show CodeBuild project status"
+```
+
+**Operations:**
+- `list_codebuild_projects` - Projects with build history
+
+### CodePipeline
+
+```bash
+clanker aws list codepipeline
+clanker ask "Show pipeline execution status"
+```
+
+**Operations:**
+- `list_codepipelines` - Pipelines with stage status
+- `describe_codepipeline` - Pipeline configuration
+
+### CodeCommit
+
+```bash
+clanker aws list codecommit
+clanker ask "List Git repositories"
+```
+
+**Operations:**
+- `list_codecommit_repositories` - Repository names and URLs
+
+From `~/workspace/source/internal/aws/prompts.go:103-107`.
+
+## AI and machine learning
+
+### Bedrock (Foundation Models)
+
+```bash
+clanker aws list bedrock-models
+clanker aws list bedrock-agents
+clanker ask "Show available Bedrock models"
+```
+
+**Operations:**
+- `list_bedrock_foundation_models` - Available foundation models
+- `list_bedrock_custom_models` - Custom fine-tuned models
+- `list_bedrock_agents` - Bedrock agents
+- `list_bedrock_knowledge_bases` - Knowledge bases for RAG
+- `list_bedrock_guardrails` - Guardrails configuration
+
+From `~/workspace/source/internal/aws/prompts.go:133-145`.
+
+### SageMaker
+
+```bash
+clanker aws list sagemaker-endpoints
+clanker aws list sagemaker-models
+clanker ask "Show SageMaker training job status"
+```
+
+**Operations:**
+- `list_sagemaker_endpoints` - Model endpoints
+- `list_sagemaker_models` - Trained models
+- `list_sagemaker_notebook_instances` - Notebook instances
+- `list_sagemaker_training_jobs` - Training jobs
+
+From `~/workspace/source/internal/aws/prompts.go:117-120`.
+
+### Comprehend (NLP)
+
+```bash
+clanker aws list comprehend-jobs
+clanker ask "Show Comprehend analysis jobs"
+```
+
+**Operations:**
+- `list_comprehend_jobs` - NLP analysis jobs
+
+### Textract (Document Analysis)
+
+```bash
+clanker aws list textract-jobs
+```
+
+**Operations:**
+- `list_textract_jobs` - Document analysis jobs
+
+### Rekognition (Computer Vision)
+
+```bash
+clanker aws list rekognition-collections
+```
+
+**Operations:**
+- `list_rekognition_collections` - Face collections
+
+## Analytics services
+
+### Kinesis (Streaming Data)
+
+```bash
+clanker ask "List Kinesis streams"
+```
+
+**Operations:**
+- `list_kinesis_streams` - Data streams
+- `describe_kinesis_stream` - Shards and throughput
+
+From `~/workspace/source/internal/aws/prompts.go:110-112`.
+
+### Glue (ETL)
+
+```bash
+clanker ask "Show Glue jobs and databases"
+```
+
+**Operations:**
+- `list_glue_jobs` - ETL jobs and schedules
+- `list_glue_databases` - Data Catalog databases
+
+### EMR (Big Data)
+
+```bash
+clanker ask "List EMR clusters"
+```
+
+**Operations:**
+- `list_emr_clusters` - Hadoop/Spark clusters
+
+### Athena (SQL Queries)
+
+```bash
+clanker ask "Show Athena workgroups"
+```
+
+**Operations:**
+- Query execution via SQL on S3 data
+
+## Other services
+
+### API Gateway
+
+```bash
+clanker aws list api-gateways
+clanker ask "Show API Gateway endpoints"
+```
+
+**Operations:**
+- `list_api_gateways` - REST and HTTP APIs
+
+From `~/workspace/source/internal/aws/prompts.go:146-148`.
+
+### ElastiCache (Redis/Memcached)
+
+```bash
+clanker ask "Show ElastiCache clusters"
+```
+
+**Operations:**
+- `list_elasticache_clusters` - Cache clusters
+- `describe_elasticache_cluster` - Nodes and configuration
+
+From `~/workspace/source/internal/aws/prompts.go:122-123`.
+
+### Step Functions (Workflows)
+
+```bash
+clanker ask "List Step Functions state machines"
+```
+
+**Operations:**
+- `list_step_functions` - State machines
+- `describe_step_function` - Workflow definition
+
+From `~/workspace/source/internal/aws/prompts.go:125-126`.
+
+### Cost and billing
+
+```bash
+clanker ask "What's my AWS spending this month?"
+```
+
+**Operations:**
+- `get_cost_and_usage` - Cost information
+- `list_budgets` - Budget alerts
+
+From `~/workspace/source/internal/aws/prompts.go:128-130`.
+
+## Service discovery
+
+Clanker can discover all active services in parallel:
+
+### Check all services
+
+```bash
+clanker ask "What AWS services am I using?" --discovery
+```
+
+**Service existence checks:**
+
+From `~/workspace/source/internal/aws/llm.go:22-33`, Clanker checks:
+
+- `check_sqs_service` - SQS availability and queue count
+- `check_eventbridge_service` - EventBridge rules
+- `check_lambda_service` - Lambda function count
+- `check_sns_service` - SNS topic count
+- `check_dynamodb_service` - DynamoDB table count
+- `check_s3_service` - S3 bucket count
+- `check_rds_service` - RDS instance count
+- `check_ec2_service` - EC2 instance count
+- `check_ecs_service` - ECS cluster count
+- `check_ecr_service` - ECR repository count
+
+### Discovery operations
+
+From `~/workspace/source/internal/aws/prompts.go:13-16`:
+
+```text
+INFRASTRUCTURE DISCOVERY (New Enhanced Operations):
+- discover_all_active_services: Automatically discover all active AWS services by running service checks in parallel
+- get_infrastructure_overview: Get a comprehensive overview of the entire infrastructure across all services
+- check_all_services_parallel: Run all service availability checks in parallel to map the infrastructure
+```
+
+## Static commands
+
+Query resources directly without AI:
+
+From `~/workspace/source/internal/aws/static_commands.go:21-95`:
+
+```bash
+# Compute
+clanker aws list ec2
+clanker aws list ecs
+clanker aws list batch
+clanker aws list asg
+
+# Serverless
+clanker aws list lambda
+clanker aws list layers
+
+# Container
+clanker aws list ecr
+clanker aws list eks
+
+# Storage
+clanker aws list s3
+clanker aws list ebs
+clanker aws list efs
+
+# Database
+clanker aws list rds
+clanker aws list rds-clusters
+clanker aws list dynamodb
+
+# Networking
+clanker aws list vpcs
+clanker aws list subnets
+clanker aws list security-groups
+clanker aws list load-balancers
+
+# Messaging
+clanker aws list sqs
+clanker aws list sns
+clanker aws list eventbridge
+
+# Monitoring
+clanker aws list logs
+clanker aws list alarms
+
+# Security
+clanker aws list iam-roles
+clanker aws list kms
+clanker aws list certificates
+
+# DevOps
+clanker aws list codebuild
+clanker aws list codepipeline
+
+# AI/ML
+clanker aws list bedrock-models
+clanker aws list sagemaker-endpoints
+
+# Other
+clanker aws list api-gateways
+clanker aws list cloudfront
+clanker aws list route53
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Ask mode" icon="circle-question" href="/aws/ask-mode">
+    Query infrastructure with natural language
+  </Card>
+  <Card title="Maker/apply workflow" icon="wand-magic-sparkles" href="/aws/maker-apply">
+    Generate and execute infrastructure plans
+  </Card>
+</CardGroup>

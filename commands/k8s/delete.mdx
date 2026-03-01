@@ -1,0 +1,104 @@
+---
+title: clanker k8s delete
+description: Delete a Kubernetes cluster
+---
+
+Delete an existing Kubernetes cluster (EKS, GKE, or kubeadm).
+
+## Usage
+
+```bash
+clanker k8s delete [cluster-type] [cluster-name] [flags]
+```
+
+## Arguments
+
+<ParamField path="cluster-type" type="string" required>
+  Type of cluster to delete: `eks`, `gke`, or `kubeadm`
+</ParamField>
+
+<ParamField path="cluster-name" type="string" required>
+  Name of the cluster to delete
+</ParamField>
+
+## Flags
+
+<ParamField path="--gcp-project" type="string">
+  GCP project ID (required for GKE clusters)
+</ParamField>
+
+<ParamField path="--gcp-region" type="string">
+  GCP region for GKE clusters
+</ParamField>
+
+## Examples
+
+### Delete an EKS cluster
+
+```bash
+clanker k8s delete eks my-cluster
+```
+
+<CodeGroup>
+```bash Output
+=== Delete Plan ===
+
+Cluster Type: eks
+Cluster Name: my-cluster
+Region:       us-east-1
+Profile:      default
+
+Are you sure you want to delete this cluster? [y/N]: y
+
+[k8s] deleting eks cluster 'my-cluster'...
+[k8s] cluster 'my-cluster' deleted successfully.
+```
+</CodeGroup>
+
+### Delete a GKE cluster
+
+```bash
+clanker k8s delete gke my-cluster --gcp-project my-project
+```
+
+<CodeGroup>
+```bash Output
+=== Delete Plan ===
+
+Cluster Type: gke
+Cluster Name: my-cluster
+Project:      my-project
+Region:       us-central1
+
+Are you sure you want to delete this cluster? [y/N]: y
+
+[k8s] deleting GKE cluster 'my-cluster' in project 'my-project'...
+[k8s] cluster 'my-cluster' deleted successfully.
+```
+</CodeGroup>
+
+### Delete a kubeadm cluster
+
+```bash
+clanker k8s delete kubeadm my-cluster
+```
+
+<CodeGroup>
+```bash Output
+=== Delete Plan ===
+
+Cluster Type: kubeadm
+Cluster Name: my-cluster
+Region:       us-east-1
+Profile:      default
+
+Are you sure you want to delete this cluster? [y/N]: y
+
+[k8s] deleting kubeadm cluster 'my-cluster'...
+[k8s] cluster 'my-cluster' deleted successfully.
+```
+</CodeGroup>
+
+<Note>
+Deleting a cluster is a destructive operation that cannot be undone. You will be prompted for confirmation before deletion proceeds.
+</Note>

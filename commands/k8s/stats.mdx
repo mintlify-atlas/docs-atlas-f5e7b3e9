@@ -1,0 +1,268 @@
+---
+title: clanker k8s stats
+description: Get resource metrics and statistics from your Kubernetes cluster
+---
+
+Get CPU and memory metrics for nodes, pods, and containers in your Kubernetes cluster.
+
+<Note>
+The metrics server must be installed in your cluster for these commands to work. Most managed Kubernetes services (EKS, GKE) have it pre-installed.
+</Note>
+
+## Subcommands
+
+### nodes
+
+Get CPU and memory metrics for all cluster nodes.
+
+```bash
+clanker k8s stats nodes [flags]
+```
+
+**Flags**
+
+<ParamField path="--sort-by" type="string">
+  Sort by `cpu` or `memory`
+</ParamField>
+
+<ParamField path="-o, --output" type="string" default="table">
+  Output format: `table`, `json`, or `yaml`
+</ParamField>
+
+**Examples**
+
+```bash
+# Get node metrics
+clanker k8s stats nodes
+```
+
+<CodeGroup>
+```bash Output
+NAME                          CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+ip-10-0-1-100.ec2.internal    245m         12%    1456Mi          38%
+ip-10-0-1-101.ec2.internal    189m         9%     1123Mi          29%
+```
+</CodeGroup>
+
+```bash
+# Sort by CPU usage
+clanker k8s stats nodes --sort-by cpu
+```
+
+```bash
+# Get output as JSON
+clanker k8s stats nodes -o json
+```
+
+<CodeGroup>
+```json Output
+[
+  {
+    "name": "ip-10-0-1-100.ec2.internal",
+    "cpu": "245m",
+    "cpuPercent": 12.3,
+    "memory": "1456Mi",
+    "memPercent": 38.2
+  },
+  {
+    "name": "ip-10-0-1-101.ec2.internal",
+    "cpu": "189m",
+    "cpuPercent": 9.5,
+    "memory": "1123Mi",
+    "memPercent": 29.4
+  }
+]
+```
+</CodeGroup>
+
+### pods
+
+Get CPU and memory metrics for pods.
+
+```bash
+clanker k8s stats pods [flags]
+```
+
+**Flags**
+
+<ParamField path="-n, --namespace" type="string" default="default">
+  Namespace to query
+</ParamField>
+
+<ParamField path="-A, --all-namespaces" type="boolean">
+  Show pods from all namespaces
+</ParamField>
+
+<ParamField path="--sort-by" type="string">
+  Sort by `cpu` or `memory`
+</ParamField>
+
+<ParamField path="-o, --output" type="string" default="table">
+  Output format: `table`, `json`, or `yaml`
+</ParamField>
+
+**Examples**
+
+```bash
+# Get pod metrics in default namespace
+clanker k8s stats pods
+```
+
+<CodeGroup>
+```bash Output
+NAME                    CPU(cores)   MEMORY(bytes)
+nginx-abc123-xyz        5m           25Mi
+redis-def456-uvw        12m          128Mi
+```
+</CodeGroup>
+
+```bash
+# Get pod metrics from all namespaces
+clanker k8s stats pods -A
+```
+
+<CodeGroup>
+```bash Output
+NAMESPACE     NAME                    CPU(cores)   MEMORY(bytes)
+default       nginx-abc123-xyz        5m           25Mi
+default       redis-def456-uvw        12m          128Mi
+kube-system   coredns-abc-123         3m           15Mi
+kube-system   aws-node-xyz-789        15m          95Mi
+```
+</CodeGroup>
+
+```bash
+# Get pod metrics from kube-system namespace
+clanker k8s stats pods -n kube-system
+```
+
+```bash
+# Sort by memory usage
+clanker k8s stats pods --sort-by memory
+```
+
+### pod
+
+Get metrics for a specific pod and its containers.
+
+```bash
+clanker k8s stats pod [pod-name] [flags]
+```
+
+<ParamField path="pod-name" type="string" required>
+  Name of the pod to get metrics for
+</ParamField>
+
+**Flags**
+
+<ParamField path="-n, --namespace" type="string" default="default">
+  Namespace of the pod
+</ParamField>
+
+<ParamField path="--containers" type="boolean">
+  Show per-container metrics
+</ParamField>
+
+<ParamField path="-o, --output" type="string" default="table">
+  Output format: `table`, `json`, or `yaml`
+</ParamField>
+
+**Examples**
+
+```bash
+# Get metrics for a specific pod
+clanker k8s stats pod my-pod
+```
+
+<CodeGroup>
+```bash Output
+NAME      CPU(cores)   MEMORY(bytes)
+my-pod    45m          256Mi
+```
+</CodeGroup>
+
+```bash
+# Get per-container metrics
+clanker k8s stats pod my-pod --containers
+```
+
+<CodeGroup>
+```bash Output
+POD       CONTAINER       CPU(cores)   MEMORY(bytes)
+my-pod    app             35m          200Mi
+my-pod    sidecar         10m          56Mi
+```
+</CodeGroup>
+
+```bash
+# Get metrics from a specific namespace
+clanker k8s stats pod my-pod -n kube-system
+```
+
+### cluster
+
+Get aggregated cluster-wide metrics.
+
+```bash
+clanker k8s stats cluster [flags]
+```
+
+**Flags**
+
+<ParamField path="-o, --output" type="string" default="table">
+  Output format: `table`, `json`, or `yaml`
+</ParamField>
+
+**Examples**
+
+```bash
+# Get cluster-wide metrics
+clanker k8s stats cluster
+```
+
+<CodeGroup>
+```bash Output
+Cluster Metrics
+===============
+Nodes: 2
+Avg CPU Usage: 10.9%
+Avg Memory Usage: 33.8%
+
+NODE                           CPU          CPU%     MEMORY       MEM%
+ip-10-0-1-100.ec2.internal     245m         12.3%    1456Mi       38.2%
+ip-10-0-1-101.ec2.internal     189m         9.5%     1123Mi       29.4%
+```
+</CodeGroup>
+
+```bash
+# Get cluster metrics as JSON
+clanker k8s stats cluster -o json
+```
+
+<CodeGroup>
+```json Output
+{
+  "nodeCount": 2,
+  "totalCPU": "0m",
+  "totalMemory": "0Mi",
+  "avgCPUPercent": 10.9,
+  "avgMemPercent": 33.8,
+  "nodes": [
+    {
+      "name": "ip-10-0-1-100.ec2.internal",
+      "cpu": "245m",
+      "cpuPercent": 12.3,
+      "memory": "1456Mi",
+      "memPercent": 38.2
+    },
+    {
+      "name": "ip-10-0-1-101.ec2.internal",
+      "cpu": "189m",
+      "cpuPercent": 9.5,
+      "memory": "1123Mi",
+      "memPercent": 29.4
+    }
+  ]
+}
+```
+</CodeGroup>

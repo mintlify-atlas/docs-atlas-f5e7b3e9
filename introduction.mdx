@@ -1,0 +1,141 @@
+---
+title: Introduction to Clanker CLI
+description: AI-powered terminal for querying and managing your cloud infrastructure with natural language
+---
+
+Clanker is an AI-powered CLI tool that helps you query and manage your cloud infrastructure using natural language. Ask questions about your systems, get insights, and perform operations through an intelligent interface.
+
+<Note>
+Clanker is currently in early alpha. It powers [clankercloud.ai](https://clankercloud.ai) and is being actively developed.
+</Note>
+
+## What is Clanker?
+
+Clanker is a read-only agent that calls CLIs and APIs to answer questions about your infrastructure. It supports AWS, GCP, Azure, Kubernetes, GitHub, Cloudflare, and more—all through simple natural language queries.
+
+Instead of remembering complex CLI commands and navigating multiple dashboards, you can simply ask:
+
+```bash
+clanker ask "what's the status of my chat service lambda?"
+clanker ask "show me pods that are not running"
+clanker ask "what ec2 instances are running?"
+```
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Natural language queries" icon="message">
+    Ask questions in plain English instead of memorizing CLI commands and API syntax.
+  </Card>
+  
+  <Card title="Multi-cloud support" icon="cloud">
+    Works with AWS, GCP, Azure, Kubernetes, GitHub, Cloudflare, Terraform, and Postgres.
+  </Card>
+  
+  <Card title="Infrastructure maker" icon="hammer">
+    Generate and apply infrastructure change plans with `--maker` mode for safe, reviewable operations.
+  </Card>
+  
+  <Card title="Kubernetes management" icon="ship">
+    Create clusters, deploy applications, query resources, and troubleshoot issues with natural language.
+  </Card>
+</CardGroup>
+
+## How it works
+
+Clanker uses a multi-stage LLM pipeline:
+
+1. **Stage 1**: Analyzes your question and determines which CLI operations or API calls are needed
+2. **Stage 2**: Executes the operations in parallel for fast results
+3. **Stage 3**: Combines results with context and generates a markdown response
+
+Conversation history is maintained per environment for intelligent follow-up questions.
+
+## Supported platforms
+
+- **AWS**: Lambda, EC2, RDS, S3, CloudFormation, CloudWatch, and more
+- **Kubernetes**: EKS, GKE, AKS, kubeadm clusters, pods, deployments, services, logs
+- **GCP**: Cloud Run, Compute Engine, Cloud Functions, and other GCP services
+- **Azure**: Virtual Machines, App Services, and Azure resources
+- **GitHub**: Actions, pull requests, issues, and repository insights
+- **Cloudflare**: DNS, Workers, WAF, Zero Trust, and analytics
+- **Terraform**: Workspace management and state inspection
+- **Postgres**: Database queries and schema inspection
+
+## Use cases
+
+### Infrastructure monitoring
+
+```bash
+clanker ask "show me lambda functions with high error rates"
+clanker ask "what's the current RDS instance status?"
+clanker k8s ask "which pods are using the most memory?"
+```
+
+### Troubleshooting
+
+```bash
+clanker ask --profile dev "what's the last error from my big-api-service lambda?"
+clanker k8s ask "why is my pod crashing?"
+clanker ask "show me recent CloudWatch errors"
+```
+
+### Infrastructure changes
+
+```bash
+# Generate a plan
+clanker ask --aws --maker "create a small ec2 instance and a postgres rds" > plan.json
+
+# Review and apply the plan
+clanker ask --aws --maker --apply < plan.json
+```
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Clanker via Homebrew or from source in under a minute.
+  </Card>
+  
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Run your first query and start exploring your infrastructure.
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Set up AI providers, cloud credentials, and customize Clanker for your environments.
+  </Card>
+  
+  <Card title="GitHub Repository" icon="github" href="https://github.com/bgdnvk/clanker">
+    View the source code, contribute, or report issues.
+  </Card>
+</CardGroup>
+
+## Why Clanker?
+
+<AccordionGroup>
+  <Accordion title="Faster than dashboards">
+    Skip the web UI navigation. Get answers instantly from your terminal with natural language queries.
+  </Accordion>
+  
+  <Accordion title="No API documentation needed">
+    Don't remember the exact AWS CLI syntax? Just ask in plain English and Clanker handles the details.
+  </Accordion>
+  
+  <Accordion title="Safe infrastructure changes">
+    Maker mode generates reviewable JSON plans before making any changes. Apply only what you approve.
+  </Accordion>
+  
+  <Accordion title="Context-aware conversations">
+    Ask follow-up questions without repeating context. Clanker remembers your conversation per environment.
+  </Accordion>
+</AccordionGroup>
+
+## Community and support
+
+- **Repository**: [github.com/bgdnvk/clanker](https://github.com/bgdnvk/clanker)
+- **Homebrew tap**: [github.com/clankercloud/homebrew-tap](https://github.com/clankercloud/homebrew-tap)
+- **Website**: [clankercloud.ai](https://clankercloud.ai)
+
+<Note>
+Clanker is read-only by default. It only calls CLIs and APIs to gather information. Infrastructure changes require explicit `--maker` mode.
+</Note>

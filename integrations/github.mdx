@@ -1,0 +1,334 @@
+---
+title: GitHub Actions integration
+description: Query and monitor GitHub Actions workflows, pull requests, and repository information using Clanker CLI
+---
+
+Clanker integrates with GitHub to provide context-aware querying of your repositories, GitHub Actions workflows, workflow runs, and pull requests. This integration enables you to monitor CI/CD pipelines and repository activity directly from the command line.
+
+## Configuration
+
+Configure GitHub integration in your `~/.clanker/config.yaml`:
+
+```yaml
+github:
+  token: "ghp_xxxxxxxxxxxx"
+  default_repo: "infrastructure"
+  repos:
+    - owner: "myorg"
+      repo: "infrastructure"
+      description: "Main infrastructure repository"
+    - owner: "myorg"
+      repo: "application"
+      description: "Application code repository"
+```
+
+<Note>
+The GitHub token requires `repo` scope for private repositories and `public_repo` scope for public repositories. For workflow status, ensure the token has `actions:read` permission.
+</Note>
+
+## Client architecture
+
+The GitHub client is implemented in `/internal/github/client.go` and provides intelligent context gathering based on your queries:
+
+```go
+type Client struct {
+    client *github.Client
+    owner  string
+    repo   string
+}
+```
+
+### Authentication
+
+The client supports both authenticated and unauthenticated access:
+
+```go
+func NewClient(token, owner, repo string) *Client {
+    var client *github.Client
+    
+    if token != "" {
+        ts := oauth2.StaticTokenSource(
+            &oauth2.Token{AccessToken: token},
+        )
+        tc := oauth2.NewClient(context.Background(), ts)
+        client = github.NewClient(tc)
+    } else {
+        client = github.NewClient(nil)
+    }
+    
+    return &Client{
+        client: client,
+        owner:  owner,
+        repo:   repo,
+    }
+}
+```
+
+<Tip>
+Unauthenticated access is subject to GitHub's rate limits (60 requests/hour). Use a personal access token for higher limits (5,000 requests/hour).
+</Tip>
+
+## Context-aware queries
+
+The GitHub integration automatically detects query intent and fetches relevant information:
+
+### Workflow information
+
+Queries containing keywords like "action", "workflow", "ci", or "build" retrieve workflow data:
+
+```go
+if strings.Contains(questionLower, "action") || 
+   strings.Contains(questionLower, "workflow") || 
+   strings.Contains(questionLower, "ci") || 
+   strings.Contains(questionLower, "build") {
+    workflowInfo, err := c.getWorkflowInfo(ctx)
+    // Returns workflow name, state, and badge URL
+}
+```
+
+**Example output:**
+
+```
+- Workflow: CI Pipeline, State: active, Badge: https://github.com/...
+- Workflow: Deploy Production, State: active
+```
+
+### Workflow runs
+
+Queries with "run", "execution", or "status" fetch recent workflow run history:
+
+```go
+runs, _, err := c.client.Actions.ListRepositoryWorkflowRuns(ctx, c.owner, c.repo, &github.ListWorkflowRunsOptions{
+    ListOptions: github.ListOptions{PerPage: 10},
+})
+```
+
+**Example output:**
+
+```
+- Run #123: Update dependencies, Status: completed, Conclusion: success, 
+  Branch: main, Created: 2024-03-15T10:30:00Z
+- Run #122: Fix build error, Status: completed, Conclusion: failure, 
+  Branch: develop, Created: 2024-03-15T09:15:00Z
+```
+
+### Pull requests
+
+Queries mentioning "pull" or "pr" retrieve recent pull request information:
+
+```go
+prs, _, err := c.client.PullRequests.List(ctx, c.owner, c.repo, &github.PullRequestListOptions{
+    State:       "all",
+    ListOptions: github.ListOptions{PerPage: 5},
+})
+```
+
+**Example output:**
+
+```
+- PR #45: Add feature X, State: open, Author: developer1, 
+  Created: 2024-03-14, URL: https://github.com/...
+- PR #44: Fix bug Y, State: merged, Author: developer2, 
+  Created: 2024-03-13
+```
+
+## Direct commands
+
+### List repositories
+
+View all configured GitHub repositories:
+
+```bash
+clanker github list repos
+```
+
+Output:
+
+```
+Available GitHub Repositories (default: infrastructure):
+
+  myorg/infrastructure (default)
+    Description: Main infrastructure repository
+
+  myorg/application
+    Description: Application code repository
+```
+
+### List workflows
+
+View workflows for a specific repository:
+
+```bash
+clanker github list workflows --repo infrastructure
+```
+
+Without the `--repo` flag, uses the configured default repository.
+
+### List workflow runs
+
+View recent workflow executions:
+
+```bash
+clanker github list runs --repo infrastructure
+```
+
+### List pull requests
+
+View recent pull requests:
+
+```bash
+clanker github list prs --repo application
+```
+
+### Get workflow status
+
+Check the status of a specific workflow:
+
+```bash
+clanker github status "CI Pipeline"
+```
+
+Example output:
+
+```
+Workflow 'CI Pipeline' - Status: completed, Conclusion: success, Run #156
+```
+
+Implementation (`/cmd/github.go:156`):
+
+```go
+func (c *Client) GetWorkflowStatus(ctx context.Context, workflowName string) (string, error) {
+    workflows, _, err := c.client.Actions.ListWorkflows(ctx, c.owner, c.repo, nil)
+    if err != nil {
+        return "", err
+    }
+    
+    for _, workflow := range workflows.Workflows {
+        if workflow.GetName() == workflowName {
+            runs, _, err := c.client.Actions.ListWorkflowRunsByID(ctx, c.owner, c.repo, 
+                workflow.GetID(), &github.ListWorkflowRunsOptions{
+                    ListOptions: github.ListOptions{PerPage: 1},
+                })
+            if err != nil {
+                return "", err
+            }
+            
+            if len(runs.WorkflowRuns) > 0 {
+                run := runs.WorkflowRuns[0]
+                return fmt.Sprintf("Workflow '%s' - Status: %s, Conclusion: %s, Run #%d",
+                    workflowName, run.GetStatus(), run.GetConclusion(), run.GetRunNumber()), nil
+            }
+        }
+    }
+    
+    return fmt.Sprintf("Workflow '%s' not found", workflowName), nil
+}
+```
+
+## Natural language queries
+
+Use the `ask` command with `--github` flag for AI-powered queries:
+
+```bash
+clanker ask --github "What's the status of recent CI runs?"
+```
+
+```bash
+clanker ask --github "Show me failed pull request checks from yesterday"
+```
+
+```bash
+clanker ask --github "Which workflows are currently running?"
+```
+
+The AI receives GitHub context automatically and provides intelligent responses based on workflow states, run conclusions, and PR status.
+
+## Multi-repository support
+
+Configure multiple repositories and specify which to query:
+
+```yaml
+github:
+  default_repo: "backend"
+  repos:
+    - owner: "company"
+      repo: "backend"
+    - owner: "company"
+      repo: "frontend"
+    - owner: "company"
+      repo: "infrastructure"
+```
+
+Query a specific repository:
+
+```bash
+clanker github list workflows --repo frontend
+```
+
+## Rate limiting
+
+The GitHub client respects GitHub's API rate limits:
+
+- **Unauthenticated**: 60 requests/hour
+- **Authenticated**: 5,000 requests/hour
+- **GitHub Enterprise**: Higher limits vary by plan
+
+<Warning>
+If you hit rate limits, the client will return an error. Consider implementing caching or reducing query frequency.
+</Warning>
+
+## Error handling
+
+The client provides detailed error messages:
+
+```go
+if err != nil {
+    return "", fmt.Errorf("failed to get workflow info: %w", err)
+}
+```
+
+Common errors:
+
+- **404 Not Found**: Repository or workflow doesn't exist
+- **403 Forbidden**: Token lacks required permissions
+- **401 Unauthorized**: Invalid or expired token
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Use repository-scoped tokens">
+    Create tokens with minimal necessary scopes. For read-only access to public repositories, use `public_repo` scope instead of full `repo` access.
+  </Accordion>
+
+  <Accordion title="Configure default repository">
+    Set `github.default_repo` to avoid specifying `--repo` flag on every command.
+  </Accordion>
+
+  <Accordion title="Monitor workflow conclusions">
+    The client distinguishes between workflow status (queued, in_progress, completed) and conclusion (success, failure, cancelled). Use both for comprehensive monitoring.
+  </Accordion>
+
+  <Accordion title="Leverage natural language queries">
+    Instead of remembering specific commands, use `clanker ask --github` with natural language for complex queries that require context from multiple endpoints.
+  </Accordion>
+</AccordionGroup>
+
+## Integration with AI context
+
+When using `ask` with the `--github` flag, Clanker automatically enriches AI queries with relevant GitHub context:
+
+```go
+if includeGitHub {
+    githubClient := ghclient.NewClient(token, owner, repo)
+    githubContext, err = githubClient.GetRelevantContext(ctx, question)
+    // GitHub context is passed to AI for intelligent analysis
+}
+```
+
+This enables queries like:
+
+```bash
+clanker ask --github "Compare CI performance between main and develop branches"
+```
+
+The AI receives workflow run data for both branches and provides comparative analysis.

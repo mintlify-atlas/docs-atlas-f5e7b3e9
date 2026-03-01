@@ -1,0 +1,528 @@
+---
+title: Kubernetes setup
+description: Create and manage Kubernetes clusters with Clanker CLI
+---
+
+Clanker provides comprehensive Kubernetes cluster management across EKS, GKE, and kubeadm. You can create clusters, deploy applications, and query resources using natural language.
+
+## Supported platforms
+
+- **Amazon EKS**: Managed Kubernetes on AWS
+- **Google GKE**: Managed Kubernetes on GCP  
+- **Kubeadm**: Self-managed clusters on EC2/GCE instances
+
+<Steps>
+
+<Step title="Create your first EKS cluster">
+
+Create an Amazon EKS cluster with worker nodes:
+
+```bash
+clanker k8s create eks my-cluster --nodes 2 --node-type t3.small
+```
+
+Clanker will:
+1. Generate an execution plan
+2. Show estimated costs and resources
+3. Prompt for confirmation
+4. Create the EKS cluster and node group
+5. Update your kubeconfig automatically
+
+**Example output:**
+
+```
+=== Kubernetes Cluster Plan ===
+
+Cluster: my-cluster (EKS)
+Region: us-east-1
+Kubernetes Version: 1.29
+
+Resources:
+  - EKS Cluster Control Plane
+  - Managed Node Group (2 nodes)
+  - Node Type: t3.small
+  - VPC with public/private subnets
+  - Security groups
+  - IAM roles (cluster, node)
+
+Estimated monthly cost: ~$75
+  - EKS control plane: $73/month
+  - 2x t3.small nodes: ~$30/month
+
+Do you want to create this cluster? [y/N]: y
+
+[eks] creating cluster control plane...
+[eks] creating managed node group...
+[eks] waiting for nodes to be ready...
+
+=== Cluster Created Successfully ===
+
+Name:       my-cluster
+Status:     ACTIVE
+Endpoint:   https://ABC123.eks.us-east-1.amazonaws.com
+Version:    1.29
+
+Nodes:
+  - ip-10-0-1-45.ec2.internal (Ready)
+  - ip-10-0-2-67.ec2.internal (Ready)
+
+Kubeconfig: ~/.kube/config
+
+Next steps:
+  kubectl get nodes
+  kubectl get pods -A
+```
+
+<Tip>
+Use `--plan` to preview the cluster configuration without creating it:
+```bash
+clanker k8s create eks my-cluster --nodes 3 --plan
+```
+</Tip>
+
+</Step>
+
+<Step title="Create a GKE cluster">
+
+Create a Google Kubernetes Engine cluster:
+
+```bash
+clanker k8s create gke my-gke-cluster \
+  --gcp-project my-project \
+  --nodes 2 \
+  --node-type e2-standard-2 \
+  --gcp-region us-central1
+```
+
+GKE-specific options:
+- `--preemptible`: Use preemptible VMs for cost savings
+- `--gcp-region`: Specify GCP region (default: us-central1)
+- `--version`: Kubernetes version (default: GKE default)
+
+</Step>
+
+<Step title="Create a kubeadm cluster">
+
+Create a self-managed cluster using kubeadm on EC2:
+
+```bash
+clanker k8s create kubeadm my-kubeadm-cluster \
+  --workers 2 \
+  --key-pair my-key \
+  --node-type t3.medium
+```
+
+Kubeadm clusters give you full control:
+- Manual CNI selection (Calico, Flannel)
+- Custom Kubernetes versions
+- Direct access via SSH
+- Lower cost than managed services
+
+**Kubeadm workflow:**
+
+```
+[k8s] checking SSH key configuration...
+[k8s] SSH key 'my-key' exists in region us-east-1
+[k8s] private key: ~/.ssh/my-key.pem
+
+=== Kubernetes Cluster Plan ===
+
+Cluster: my-kubeadm-cluster (kubeadm)
+Control Plane: 1x t3.medium
+Worker Nodes: 2x t3.medium
+CNI: Calico
+
+[k8s] launching control plane instance...
+[k8s] installing kubeadm, kubectl, kubelet...
+[k8s] initializing cluster with kubeadm...
+[k8s] installing Calico CNI...
+[k8s] launching worker nodes...
+[k8s] joining workers to cluster...
+
+=== Cluster Created Successfully ===
+
+Control Plane:
+  master-node: 10.0.1.45 (Public: 54.234.123.45)
+
+Workers:
+  worker-1: 10.0.1.67 (Public: 54.234.123.67)
+  worker-2: 10.0.1.89 (Public: 54.234.123.89)
+
+Kubeconfig: ~/.kube/kubeadm-my-kubeadm-cluster.conf
+
+SSH access:
+  ssh -i ~/.ssh/my-key.pem ubuntu@54.234.123.45
+```
+
+</Step>
+
+<Step title="List clusters">
+
+View all clusters of a specific type:
+
+```bash
+# List EKS clusters
+clanker k8s list eks
+
+# List GKE clusters
+clanker k8s list gke --gcp-project my-project
+
+# List kubeadm clusters
+clanker k8s list kubeadm
+```
+
+**Output:**
+
+```
+=== EKS Clusters ===
+
+Name:     my-cluster
+Status:   ACTIVE
+Region:   us-east-1
+Version:  1.29
+Endpoint: https://ABC123.eks.us-east-1.amazonaws.com
+Workers:  2
+
+Name:     prod-cluster
+Status:   ACTIVE
+Region:   us-east-1
+Version:  1.28
+Endpoint: https://DEF456.eks.us-east-1.amazonaws.com
+Workers:  5
+```
+
+</Step>
+
+<Step title="Deploy an application">
+
+Deploy a containerized application to your cluster:
+
+```bash
+clanker k8s deploy nginx --name my-nginx --port 80 --replicas 3
+```
+
+This creates:
+- A Deployment with 3 replicas
+- A Service of type LoadBalancer
+- Automatic pod scheduling across nodes
+
+**Deployment output:**
+
+```
+=== Deployment Plan ===
+
+Name: my-nginx
+Image: nginx
+Replicas: 3
+Port: 80
+Namespace: default
+Service Type: LoadBalancer
+
+Do you want to deploy this application? [y/N]: y
+
+[k8s] deploying application...
+deployment.apps/my-nginx created
+service/my-nginx created
+
+=== Deployment Successful ===
+
+Endpoint: http://a1b2c3d4e5f6-1234567890.us-east-1.elb.amazonaws.com
+
+Next steps:
+  kubectl get pods -l app=my-nginx
+  kubectl logs -f deployment/my-nginx
+  kubectl scale deployment/my-nginx --replicas=5
+```
+
+</Step>
+
+<Step title="Get cluster resources">
+
+Retrieve all cluster resources as JSON or YAML:
+
+```bash
+# Get resources from specific cluster (JSON)
+clanker k8s resources --cluster my-cluster
+
+# Get resources in YAML format
+clanker k8s resources --cluster my-cluster -o yaml
+
+# Get resources from all EKS clusters
+clanker k8s resources
+```
+
+This returns comprehensive cluster state:
+- Nodes (capacity, status, labels)
+- Pods (all namespaces)
+- Services (ClusterIP, LoadBalancer, NodePort)
+- PersistentVolumes and PersistentVolumeClaims
+- ConfigMaps and Secrets
+- Deployments, StatefulSets, DaemonSets
+
+</Step>
+
+</Steps>
+
+## Monitoring and debugging
+
+### View pod logs
+
+```bash
+# Get logs from a pod
+clanker k8s logs my-pod
+
+# Logs from specific container
+clanker k8s logs my-pod -c my-container
+
+# Follow logs in real-time
+clanker k8s logs my-pod -f
+
+# Last 100 lines
+clanker k8s logs my-pod --tail 100
+
+# Logs from last 1 hour
+clanker k8s logs my-pod --since 1h
+
+# With timestamps
+clanker k8s logs my-pod --timestamps
+
+# All containers in pod
+clanker k8s logs my-pod --all-containers
+
+# Previous container (after restart)
+clanker k8s logs my-pod -p
+```
+
+### Resource metrics
+
+```bash
+# Node metrics
+clanker k8s stats nodes
+clanker k8s stats nodes --sort-by cpu
+clanker k8s stats nodes -o json
+
+# Pod metrics  
+clanker k8s stats pods
+clanker k8s stats pods -n kube-system
+clanker k8s stats pods -A  # All namespaces
+clanker k8s stats pods --sort-by memory
+
+# Specific pod metrics
+clanker k8s stats pod my-pod -n production
+clanker k8s stats pod my-pod --containers
+
+# Cluster-wide metrics
+clanker k8s stats cluster
+```
+
+**Example metrics output:**
+
+```
+NAME                CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+ip-10-0-1-45        245m         12%    1456Mi          45%
+ip-10-0-2-67        189m         9%     1123Mi          35%
+```
+
+## Natural language queries
+
+Use `k8s ask` for natural language Kubernetes queries:
+
+```bash
+# Basic queries
+clanker k8s ask "how many pods are running"
+clanker k8s ask "list all deployments and their replica counts"
+clanker k8s ask "tell me the health of my cluster"
+
+# With specific cluster
+clanker k8s ask --cluster my-cluster "show me all pods"
+
+# Resource metrics
+clanker k8s ask "which pods are using the most memory"
+clanker k8s ask "show node resource usage"
+clanker k8s ask "top 10 pods by cpu usage"
+
+# Troubleshooting
+clanker k8s ask "show me recent logs from nginx"
+clanker k8s ask "why is my pod crashing"
+clanker k8s ask "get warning events from the cluster"
+
+# Follow-up questions (maintains context)
+clanker k8s ask "show me the nginx deployment"
+clanker k8s ask "now show me its logs"
+```
+
+**How k8s ask works:**
+
+1. LLM analyzes your question
+2. Determines required kubectl operations
+3. Executes operations in parallel
+4. Synthesizes results into markdown response
+5. Maintains conversation context per cluster
+
+## Cluster management
+
+### Get kubeconfig
+
+```bash
+# EKS
+clanker k8s kubeconfig eks my-cluster
+
+# GKE
+clanker k8s kubeconfig gke my-gke-cluster --gcp-project my-project
+
+# Kubeadm
+clanker k8s kubeconfig kubeadm my-kubeadm-cluster
+```
+
+### Delete clusters
+
+```bash
+# Delete EKS cluster
+clanker k8s delete eks my-cluster
+
+# Delete GKE cluster
+clanker k8s delete gke my-gke-cluster --gcp-project my-project
+
+# Delete kubeadm cluster (terminates all EC2 instances)
+clanker k8s delete kubeadm my-kubeadm-cluster
+```
+
+<Warning>
+Deleting a cluster is permanent and will remove all workloads, data, and configuration.
+</Warning>
+
+## Advanced configurations
+
+### Custom EKS cluster
+
+```bash
+clanker k8s create eks production-cluster \
+  --nodes 5 \
+  --node-type m5.large \
+  --version 1.29 \
+  --profile prod-aws
+```
+
+### GKE with preemptible nodes
+
+```bash
+clanker k8s create gke staging-cluster \
+  --gcp-project my-project \
+  --nodes 3 \
+  --node-type e2-standard-4 \
+  --preemptible \
+  --gcp-region us-west1
+```
+
+### Multi-zone kubeadm
+
+```bash
+clanker k8s create kubeadm multi-zone-cluster \
+  --workers 3 \
+  --node-type t3.large \
+  --key-pair my-key \
+  --version 1.28
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use managed services" icon="cloud">
+    Prefer EKS/GKE for production workloads. They provide automatic upgrades, security patches, and HA control planes.
+  </Card>
+  
+  <Card title="Right-size nodes" icon="gauge">
+    Start with smaller node types (t3.medium) and scale up based on actual usage. Monitor with `k8s stats`.
+  </Card>
+  
+  <Card title="Plan before creating" icon="clipboard-list">
+    Use `--plan` to review cluster configuration and costs before provisioning.
+  </Card>
+  
+  <Card title="Namespace isolation" icon="boxes">
+    Deploy applications to dedicated namespaces for better organization and resource quotas.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cluster creation fails">
+    Common issues:
+    
+    **Insufficient IAM permissions**
+    ```bash
+    # Verify your AWS user has EKS permissions
+    aws iam get-user --profile my-profile
+    ```
+    
+    **VPC quota exceeded**
+    ```bash
+    # Check VPC limits
+    aws ec2 describe-account-attributes --attribute-names vpc-max-elastic-ips
+    ```
+    
+    **Invalid instance type for region**
+    ```bash
+    # List available instance types
+    aws ec2 describe-instance-type-offerings --location-type availability-zone
+    ```
+  </Accordion>
+  
+  <Accordion title="Cannot connect to cluster">
+    If kubectl commands fail:
+    
+    ```bash
+    # Verify kubeconfig is set
+    echo $KUBECONFIG
+    
+    # Re-fetch kubeconfig
+    clanker k8s kubeconfig eks my-cluster
+    
+    # Test connection
+    kubectl cluster-info
+    
+    # Check AWS credentials
+    aws sts get-caller-identity --profile my-profile
+    ```
+  </Accordion>
+  
+  <Accordion title="Nodes not joining cluster">
+    For kubeadm clusters:
+    
+    ```bash
+    # SSH to master node
+    ssh -i ~/.ssh/my-key.pem ubuntu@<master-ip>
+    
+    # Check cluster status
+    kubectl get nodes
+    
+    # View join token
+    sudo kubeadm token list
+    
+    # SSH to worker and check logs
+    ssh -i ~/.ssh/my-key.pem ubuntu@<worker-ip>
+    sudo journalctl -u kubelet -f
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Set up comprehensive cluster monitoring
+  </Card>
+  
+  <Card title="Kubernetes debugging" href="/guides/kubernetes-debugging" icon="bug">
+    Debug pods, services, and networking issues
+  </Card>
+  
+  <Card title="Multi-environment" href="/guides/multi-environment" icon="network-wired">
+    Manage dev, staging, and prod clusters
+  </Card>
+  
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Optimize Kubernetes costs with right-sizing
+  </Card>
+</CardGroup>

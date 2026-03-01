@@ -1,0 +1,469 @@
+---
+title: "cf deploy"
+description: "Deploy Workers, Pages, and other resources to Cloudflare"
+---
+
+The `cf deploy` command deploys applications and resources to Cloudflare's edge network.
+
+## Usage
+
+```bash
+clanker cf deploy <resource-type> [flags]
+```
+
+## Resource types
+
+### Worker deployment
+
+Deploy a Cloudflare Worker script to the edge.
+
+```bash
+clanker cf deploy worker --name <worker-name> --script <path-to-script> [flags]
+```
+
+#### Flags
+
+<ParamField path="--name" type="string" required>
+  Worker name. This is the unique identifier for your Worker.
+</ParamField>
+
+<ParamField path="--script" type="string" required>
+  Path to the Worker script file (JavaScript or TypeScript).
+</ParamField>
+
+<ParamField path="--compatibility-date" type="string">
+  Compatibility date for the Worker runtime (e.g., `2024-01-01`). Determines which features and behaviors are available.
+</ParamField>
+
+<ParamField path="--route" type="string[]">
+  Worker routes. Can specify multiple routes by repeating the flag. Example: `example.com/*`
+</ParamField>
+
+<ParamField path="--kv" type="string[]">
+  KV namespace bindings in the format `BINDING=namespace-id`. Can specify multiple bindings.
+</ParamField>
+
+<ParamField path="--r2" type="string[]">
+  R2 bucket bindings in the format `BINDING=bucket-name`. Can specify multiple bindings.
+</ParamField>
+
+<ParamField path="--d1" type="string[]">
+  D1 database bindings in the format `BINDING=database-id`. Can specify multiple bindings.
+</ParamField>
+
+<ParamField path="--env" type="string[]">
+  Environment variables in the format `KEY=value`. Can specify multiple variables.
+</ParamField>
+
+#### Examples
+
+<CodeGroup>
+
+```bash Basic Worker
+clanker cf deploy worker --name my-worker --script ./worker.js
+```
+
+```bash Worker with route
+clanker cf deploy worker \
+  --name my-api \
+  --script ./api.js \
+  --route "example.com/*"
+```
+
+```bash Worker with bindings
+clanker cf deploy worker \
+  --name my-worker \
+  --script ./worker.js \
+  --kv MY_KV=namespace-id \
+  --r2 ASSETS=my-bucket \
+  --d1 DB=database-id \
+  --env API_KEY=secret123
+```
+
+</CodeGroup>
+
+#### Output
+
+```bash
+Deploying Worker 'my-worker'...
+Worker deployed successfully!
+URL: https://my-worker.your-subdomain.workers.dev
+ID: worker-id-123
+```
+
+### Pages deployment
+
+Deploy static assets to Cloudflare Pages.
+
+```bash
+clanker cf deploy pages --project <project-name> --directory <build-dir> [flags]
+```
+
+#### Flags
+
+<ParamField path="--project" type="string" required>
+  Pages project name. Must be an existing project or create one first with `cf create pages`.
+</ParamField>
+
+<ParamField path="--directory" type="string" required>
+  Directory containing the built static assets to deploy.
+</ParamField>
+
+<ParamField path="--branch" type="string">
+  Git branch name. Used to determine if this is a production or preview deployment.
+</ParamField>
+
+<ParamField path="--commit-hash" type="string">
+  Git commit hash for deployment tracking.
+</ParamField>
+
+<ParamField path="--commit-message" type="string">
+  Git commit message for deployment context.
+</ParamField>
+
+#### Examples
+
+<CodeGroup>
+
+```bash Basic deployment
+clanker cf deploy pages --project my-site --directory ./dist
+```
+
+```bash Production deployment
+clanker cf deploy pages \
+  --project my-site \
+  --directory ./build \
+  --branch main \
+  --commit-hash abc123 \
+  --commit-message "Deploy v1.2.3"
+```
+
+</CodeGroup>
+
+#### Output
+
+```bash
+Deploying to Pages project 'my-site'...
+Pages deployed successfully!
+URL: https://abc123.my-site.pages.dev
+```
+
+## Creating resources
+
+Before deploying, you may need to create supporting resources:
+
+### Create Pages project
+
+```bash
+clanker cf create pages --name <project-name> [flags]
+```
+
+<ParamField path="--name" type="string" required>
+  Project name for the new Pages project.
+</ParamField>
+
+<ParamField path="--production-branch" type="string" default="main">
+  The Git branch to use for production deployments.
+</ParamField>
+
+<ParamField path="--build-command" type="string">
+  Build command to run (e.g., `npm run build`).
+</ParamField>
+
+<ParamField path="--build-directory" type="string">
+  Output directory from the build command (e.g., `dist` or `build`).
+</ParamField>
+
+### Create KV namespace
+
+```bash
+clanker cf create kv --name <namespace-name>
+```
+
+<ParamField path="--name" type="string" required>
+  KV namespace name.
+</ParamField>
+
+### Create D1 database
+
+```bash
+clanker cf create d1 --name <database-name>
+```
+
+<ParamField path="--name" type="string" required>
+  D1 database name.
+</ParamField>
+
+### Create R2 bucket
+
+```bash
+clanker cf create r2 --name <bucket-name> [flags]
+```
+
+<ParamField path="--name" type="string" required>
+  R2 bucket name.
+</ParamField>
+
+<ParamField path="--location" type="string">
+  Location hint for optimal performance. Options: `wnam` (Western North America), `enam` (Eastern North America), `weur` (Western Europe), `eeur` (Eastern Europe), `apac` (Asia-Pacific).
+</ParamField>
+
+### Create Cloudflare Tunnel
+
+```bash
+clanker cf create tunnel --name <tunnel-name>
+```
+
+<ParamField path="--name" type="string" required>
+  Tunnel name.
+</ParamField>
+
+### Create DNS record
+
+```bash
+clanker cf create dns --zone <zone> --type <type> --name <name> --content <content> [flags]
+```
+
+<ParamField path="--zone" type="string" required>
+  Zone name or ID (e.g., `example.com`).
+</ParamField>
+
+<ParamField path="--type" type="string" required>
+  DNS record type: `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SRV`, `CAA`, etc.
+</ParamField>
+
+<ParamField path="--name" type="string" required>
+  DNS record name (e.g., `www`, `api`, or `@` for root).
+</ParamField>
+
+<ParamField path="--content" type="string" required>
+  Record content (e.g., IP address for A records, domain for CNAME).
+</ParamField>
+
+<ParamField path="--ttl" type="integer" default="1">
+  Time-to-live in seconds. Use `1` for automatic.
+</ParamField>
+
+<ParamField path="--proxied" type="boolean" default="false">
+  Whether to proxy the record through Cloudflare (orange cloud).
+</ParamField>
+
+<ParamField path="--priority" type="integer" default="0">
+  Priority for MX records.
+</ParamField>
+
+## Deleting resources
+
+### Delete Worker
+
+```bash
+clanker cf delete worker --name <worker-name>
+```
+
+### Delete Pages project
+
+```bash
+clanker cf delete pages --name <project-name>
+```
+
+### Delete KV namespace
+
+```bash
+clanker cf delete kv --id <namespace-id>
+```
+
+### Delete D1 database
+
+```bash
+clanker cf delete d1 --id <database-id>
+```
+
+### Delete R2 bucket
+
+```bash
+clanker cf delete r2 --name <bucket-name>
+```
+
+### Delete Tunnel
+
+```bash
+clanker cf delete tunnel --id <tunnel-id>
+```
+
+### Delete DNS record
+
+```bash
+clanker cf delete dns --zone <zone> --id <record-id>
+```
+
+## Listing resources
+
+View your existing Cloudflare resources:
+
+```bash
+clanker cf list zones
+```
+
+Example output:
+
+```json
+[
+  {
+    "id": "zone-id-123",
+    "name": "example.com",
+    "status": "active",
+    "name_servers": [
+      "ns1.cloudflare.com",
+      "ns2.cloudflare.com"
+    ]
+  }
+]
+```
+
+## Complete deployment example
+
+Here's a complete workflow for deploying a Worker with all supporting resources:
+
+<Steps>
+
+<Step title="Create KV namespace for caching">
+  ```bash
+  clanker cf create kv --name my-cache
+  ```
+  
+  Output:
+  ```bash
+  KV namespace created successfully!
+  ID: namespace-abc123
+  Title: my-cache
+  ```
+</Step>
+
+<Step title="Create R2 bucket for assets">
+  ```bash
+  clanker cf create r2 --name my-assets --location wnam
+  ```
+  
+  Output:
+  ```bash
+  R2 bucket created successfully!
+  Name: my-assets
+  Location: wnam
+  ```
+</Step>
+
+<Step title="Deploy the Worker">
+  ```bash
+  clanker cf deploy worker \
+    --name my-api \
+    --script ./worker.js \
+    --route "api.example.com/*" \
+    --kv CACHE=namespace-abc123 \
+    --r2 ASSETS=my-assets \
+    --env API_URL=https://backend.example.com
+  ```
+  
+  Output:
+  ```bash
+  Deploying Worker 'my-api'...
+  Worker deployed successfully!
+  URL: https://my-api.your-subdomain.workers.dev
+  ID: worker-xyz789
+  ```
+</Step>
+
+<Step title="Create DNS record">
+  ```bash
+  clanker cf create dns \
+    --zone example.com \
+    --type CNAME \
+    --name api \
+    --content my-api.your-subdomain.workers.dev \
+    --proxied
+  ```
+  
+  Output:
+  ```bash
+  Creating DNS record CNAME api -> my-api.your-subdomain.workers.dev...
+  DNS record created successfully!
+  ID: record-123
+  Type: CNAME
+  Name: api.example.com
+  Content: my-api.your-subdomain.workers.dev
+  Proxied: true
+  ```
+</Step>
+
+</Steps>
+
+## Common authentication flags
+
+<ParamField path="--account-id" type="string">
+  Cloudflare account ID. Can also be set via `CLOUDFLARE_ACCOUNT_ID` or in config file.
+</ParamField>
+
+<ParamField path="--api-token" type="string" required>
+  Cloudflare API token. Can also be set via `CLOUDFLARE_API_TOKEN` or in config file.
+</ParamField>
+
+<ParamField path="--debug" type="boolean" default="false">
+  Enable debug output for troubleshooting.
+</ParamField>
+
+## Error handling
+
+Common errors and solutions:
+
+<AccordionGroup>
+
+<Accordion title="API token is required">
+  **Error:** `cloudflare API token is required`
+  
+  **Solution:** Provide your API token via:
+  - `--api-token` flag
+  - `CLOUDFLARE_API_TOKEN` environment variable
+  - `cloudflare.api_token` in `~/.clanker.yaml`
+</Accordion>
+
+<Accordion title="Failed to deploy worker">
+  **Error:** `failed to deploy worker: <error details>`
+  
+  **Solutions:**
+  - Verify your script syntax is valid
+  - Check that all bindings reference existing resources
+  - Ensure your API token has Worker deployment permissions
+  - Use `--debug` flag to see detailed error information
+</Accordion>
+
+<Accordion title="Zone not found">
+  **Error:** `failed to find zone`
+  
+  **Solutions:**
+  - Verify the zone name is correct
+  - Ensure the zone exists in your Cloudflare account
+  - Check your API token has permission to access the zone
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Natural language queries" icon="message-question" href="/commands/cloudflare/ask">
+  Query your deployments using natural language
+</Card>
+
+<Card title="Cloudflare overview" icon="cloud" href="/commands/cloudflare/overview">
+  Learn about all Cloudflare commands
+</Card>
+
+<Card title="Configuration" icon="gear" href="/commands/config">
+  Configure default Cloudflare settings
+</Card>
+
+<Card title="Provider guide" icon="book" href="/providers/cloudflare">
+  Deep dive into Cloudflare integration
+</Card>
+
+</CardGroup>

@@ -1,0 +1,372 @@
+---
+title: Ask mode
+description: Use natural language to query and troubleshoot your Kubernetes clusters with AI
+---
+
+Clanker's `k8s ask` mode enables you to interact with your Kubernetes cluster using natural language questions.
+
+## Overview
+
+Ask mode uses AI to:
+
+1. Analyze your question
+2. Determine what kubectl operations are needed
+3. Execute those operations against your cluster
+4. Provide a comprehensive markdown-formatted response
+
+<Info>
+Conversation history is maintained per cluster, enabling follow-up questions and context-aware responses.
+</Info>
+
+## Basic usage
+
+Ask questions about your cluster in plain English:
+
+```bash
+# Basic queries
+clanker k8s ask "how many pods are running"
+clanker k8s ask "show me all deployments"
+clanker k8s ask "list services in default namespace"
+
+# Resource usage
+clanker k8s ask "which pods are using the most memory"
+clanker k8s ask "show me node CPU usage"
+clanker k8s ask "what's the cluster utilization"
+
+# Troubleshooting
+clanker k8s ask "why is my nginx pod failing"
+clanker k8s ask "show me error logs for the api pod"
+clanker k8s ask "tell me the health of my cluster"
+```
+
+## Cluster targeting
+
+### EKS clusters
+
+Query specific EKS clusters:
+
+```bash
+# Use cluster name and AWS profile
+clanker k8s ask --cluster my-cluster --profile myaws "how many nodes"
+
+# Works with current kubeconfig context
+clanker k8s ask "show me all pods"
+```
+
+### GKE clusters
+
+Query GKE clusters:
+
+```bash
+# Specify GCP project and cluster
+clanker k8s ask \
+  --gcp \
+  --gcp-project my-project \
+  --cluster my-gke-cluster \
+  "show me all pods"
+
+# Use current gcloud config
+clanker k8s ask --gcp "list namespaces"
+```
+
+### Using kubeconfig
+
+Query using existing kubeconfig:
+
+```bash
+# Use specific context
+clanker k8s ask --context staging "show deployments"
+
+# Use custom kubeconfig file
+clanker k8s ask --kubeconfig ~/.kube/custom-config "get pods"
+```
+
+## Query examples
+
+### Cluster information
+
+<CodeGroup>
+```bash Basic info
+clanker k8s ask "how many pods are running"
+clanker k8s ask "what version of kubernetes"
+clanker k8s ask "show me all namespaces"
+```
+
+```bash Node information
+clanker k8s ask "how many nodes are there"
+clanker k8s ask "what's the status of node ip-10-0-1-100"
+clanker k8s ask "are all nodes ready"
+```
+
+```bash Workloads
+clanker k8s ask "list all deployments"
+clanker k8s ask "how many replicas does nginx have"
+clanker k8s ask "show me failing pods"
+```
+</CodeGroup>
+
+### Resource usage and monitoring
+
+<CodeGroup>
+```bash Memory usage
+clanker k8s ask "which pods are using the most memory"
+clanker k8s ask "show memory usage by namespace"
+clanker k8s ask "is any pod using more than 1GB"
+```
+
+```bash CPU usage
+clanker k8s ask "which nodes have high CPU usage"
+clanker k8s ask "show me CPU usage for all pods"
+clanker k8s ask "what's the average CPU utilization"
+```
+
+```bash Cluster capacity
+clanker k8s ask "how much memory is available"
+clanker k8s ask "what's the total cluster capacity"
+clanker k8s ask "are we running out of resources"
+```
+</CodeGroup>
+
+### Troubleshooting
+
+<CodeGroup>
+```bash Pod issues
+clanker k8s ask "why is my nginx pod crashing"
+clanker k8s ask "show me error logs for api-server"
+clanker k8s ask "which pods are in pending state"
+```
+
+```bash Events and errors
+clanker k8s ask "show me recent warning events"
+clanker k8s ask "what errors occurred in the last hour"
+clanker k8s ask "why can't my pod schedule"
+```
+
+```bash Health checks
+clanker k8s ask "tell me the health of my cluster"
+clanker k8s ask "are there any unhealthy pods"
+clanker k8s ask "check if all services are running"
+```
+</CodeGroup>
+
+## Advanced features
+
+### Namespace filtering
+
+Query specific namespaces:
+
+```bash
+# Default namespace
+clanker k8s ask -n production "show all pods"
+
+# All namespaces
+clanker k8s ask "list pods in all namespaces"
+```
+
+### Multi-step queries
+
+Ask complex questions that require multiple operations:
+
+```bash
+clanker k8s ask "find the pod using the most memory and show its logs"
+clanker k8s ask "tell me which deployment has failing pods and why"
+clanker k8s ask "compare CPU usage between production and staging namespaces"
+```
+
+### Follow-up questions
+
+Maintained conversation context enables follow-ups:
+
+```bash
+# First question
+clanker k8s ask "show me all pods in default namespace"
+
+# Follow-up (remembers we're talking about default namespace)
+clanker k8s ask "which one is using the most memory"
+
+# Another follow-up
+clanker k8s ask "show me its logs"
+```
+
+## Configuration
+
+### AI profile
+
+Use specific AI configuration:
+
+```bash
+clanker k8s ask --ai-profile production "analyze cluster"
+```
+
+### Debug mode
+
+View what kubectl commands are being executed:
+
+```bash
+clanker k8s ask --debug "show all pods"
+```
+
+**Example debug output:**
+
+```
+[k8s-ask] Analyzing question: "show all pods"
+[k8s-ask] LLM determined operations: [{"operation":"list_pods","parameters":{"all_namespaces":true}}]
+[k8s-ask] Executing: kubectl get pods -A -o wide
+[k8s-ask] Got 47 pods across 6 namespaces
+[k8s-ask] Generating response...
+```
+
+## Implementation details
+
+Ask mode is implemented in `cmd/k8s.go:202`:
+
+```go cmd/k8s.go:202
+var k8sAskCmd = &cobra.Command{
+	Use:   "ask [question]",
+	Short: "Ask natural language questions about your Kubernetes cluster",
+	Long: `Ask natural language questions about your Kubernetes cluster using AI.
+
+The AI will analyze your question, determine what kubectl operations are needed,
+execute them, and provide a comprehensive markdown-formatted response.
+
+Conversation history is maintained per cluster for follow-up questions.
+
+Examples:
+  clanker k8s ask "how many pods are running"
+  clanker k8s ask --cluster test-cluster "show me all deployments"
+  clanker k8s ask "which pods are using the most memory"
+  clanker k8s ask "why is my pod crashing"`,
+	Args: cobra.ExactArgs(1),
+	RunE: runK8sAsk,
+}
+```
+
+The AI decision flow is handled by the LLM integration:
+
+```go internal/k8s/llm.go:14
+type K8sOperation struct {
+	Operation  string                 `json:"operation"`
+	Reason     string                 `json:"reason"`
+	Parameters map[string]interface{} `json:"parameters"`
+}
+
+type K8sAnalysis struct {
+	Operations []K8sOperation `json:"operations"`
+	Analysis   string         `json:"analysis"`
+}
+```
+
+Operations are executed in parallel for performance:
+
+```go internal/k8s/llm.go:34
+func (c *Client) ExecuteOperations(ctx context.Context, operations []K8sOperation) (string, error) {
+	resultChan := make(chan K8sOperationResult, len(operations))
+	var wg sync.WaitGroup
+
+	for i, op := range operations {
+		wg.Add(1)
+		go func(index int, operation K8sOperation) {
+			defer wg.Done()
+			result, err := c.executeK8sOperation(ctx, operation)
+			resultChan <- K8sOperationResult{
+				Operation: operation.Operation,
+				Result:    result,
+				Error:     err,
+				Index:     index,
+			}
+		}(i, op)
+	}
+
+	wg.Wait()
+	return k8sResults.String(), nil
+}
+```
+
+## Supported operations
+
+The AI can execute these kubectl operations:
+
+<AccordionGroup>
+  <Accordion title="Cluster information">
+    - `get_cluster_info` - Get cluster details
+    - `get_nodes` - List all nodes
+    - `get_node_details` - Describe specific node
+    - `get_namespaces` - List namespaces
+    - `get_cluster_version` - Get Kubernetes version
+  </Accordion>
+  
+  <Accordion title="Workloads">
+    - `list_pods` - List pods
+    - `get_pod_details` - Describe specific pod
+    - `list_deployments` - List deployments
+    - `list_statefulsets` - List statefulsets
+    - `list_daemonsets` - List daemonsets
+    - `list_jobs` - List jobs
+    - `list_cronjobs` - List cronjobs
+  </Accordion>
+  
+  <Accordion title="Networking">
+    - `list_services` - List services
+    - `get_service_details` - Describe service
+    - `list_ingresses` - List ingresses
+    - `list_endpoints` - List endpoints
+    - `list_network_policies` - List network policies
+  </Accordion>
+  
+  <Accordion title="Storage">
+    - `list_pvs` - List persistent volumes
+    - `list_pvcs` - List persistent volume claims
+    - `list_storage_classes` - List storage classes
+    - `list_configmaps` - List ConfigMaps
+    - `list_secrets` - List secrets
+  </Accordion>
+  
+  <Accordion title="Logs and events">
+    - `get_pod_logs` - Get pod logs
+    - `get_events` - Get cluster events
+    - `get_warning_events` - Get warning events
+  </Accordion>
+  
+  <Accordion title="Metrics">
+    - `get_node_metrics` - Get node resource usage
+    - `get_pod_metrics` - Get pod resource usage
+    - `get_top_nodes` - Top nodes by usage
+    - `get_top_pods` - Top pods by usage
+  </Accordion>
+  
+  <Accordion title="Troubleshooting">
+    - `describe_resource` - Describe any resource
+    - `check_pod_errors` - Find error pods
+    - `get_unhealthy_pods` - Find unhealthy pods
+    - `get_pending_pods` - Find pending pods
+  </Accordion>
+</AccordionGroup>
+
+## Tips and best practices
+
+<Tip>
+**Be specific**: Instead of "show pods", try "show failing pods in production namespace".
+</Tip>
+
+<Tip>
+**Use context**: Follow-up questions work better when they reference previous responses.
+</Tip>
+
+<Tip>
+**Include metrics**: Questions like "which pods use the most memory" automatically fetch metrics.
+</Tip>
+
+<Warning>
+Ask mode executes read-only kubectl commands. It cannot modify your cluster.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring" icon="chart-line" href="/kubernetes/monitoring">
+    Learn about detailed cluster monitoring
+  </Card>
+  <Card title="Cluster management" icon="layer-group" href="/kubernetes/cluster-management">
+    Manage cluster lifecycle
+  </Card>
+</CardGroup>

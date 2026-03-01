@@ -1,0 +1,228 @@
+---
+title: clanker k8s ask
+description: Ask natural language questions about your Kubernetes cluster using AI
+---
+
+Ask natural language questions about your Kubernetes cluster using AI. The AI analyzes your question, executes the necessary kubectl operations, and provides a comprehensive markdown-formatted response.
+
+## Usage
+
+```bash
+clanker k8s ask [question] [flags]
+```
+
+## Arguments
+
+<ParamField path="question" type="string" required>
+  Natural language question about your Kubernetes cluster
+</ParamField>
+
+## Flags
+
+<ParamField path="--cluster" type="string">
+  Kubernetes cluster name (EKS or GKE cluster name)
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  AWS profile for EKS clusters
+</ParamField>
+
+<ParamField path="--kubeconfig" type="string">
+  Path to kubeconfig file (default: ~/.kube/config)
+</ParamField>
+
+<ParamField path="--context" type="string">
+  kubectl context to use (overrides --cluster)
+</ParamField>
+
+<ParamField path="-n, --namespace" type="string">
+  Default namespace for queries (default: all namespaces)
+</ParamField>
+
+<ParamField path="--ai-profile" type="string">
+  AI profile to use for LLM queries
+</ParamField>
+
+<ParamField path="--debug" type="boolean">
+  Enable debug output
+</ParamField>
+
+<ParamField path="--gcp" type="boolean">
+  Use GKE cluster instead of EKS
+</ParamField>
+
+<ParamField path="--gcp-project" type="string">
+  GCP project ID for GKE clusters
+</ParamField>
+
+<ParamField path="--gcp-region" type="string">
+  GCP region for GKE clusters
+</ParamField>
+
+## How it works
+
+The `k8s ask` command uses a three-stage AI pipeline:
+
+1. **Analysis**: The AI analyzes your question and determines what kubectl operations are needed
+2. **Execution**: The necessary kubectl commands are executed against your cluster
+3. **Response**: The AI synthesizes the results into a comprehensive, markdown-formatted answer
+
+Conversation history is maintained per cluster, allowing for follow-up questions that reference previous context.
+
+## Examples
+
+### Basic cluster information
+
+```bash
+clanker k8s ask "how many pods are running"
+```
+
+<CodeGroup>
+```markdown Output
+## Running Pods
+
+Your cluster currently has **12 pods** running across all namespaces:
+
+- **default**: 3 pods
+- **kube-system**: 8 pods
+- **monitoring**: 1 pod
+
+All pods are in a healthy state.
+```
+</CodeGroup>
+
+### Query specific resources
+
+```bash
+clanker k8s ask --cluster test-cluster --profile myaws "show me all deployments"
+```
+
+```bash
+clanker k8s ask "which pods are using the most memory"
+```
+
+<CodeGroup>
+```markdown Output
+## Top Memory Consumers
+
+Here are the pods using the most memory in your cluster:
+
+1. **redis-master-0** (default): 512Mi
+2. **postgres-primary-0** (database): 384Mi
+3. **nginx-ingress-controller** (kube-system): 256Mi
+
+The redis-master pod is consuming the most memory at 512Mi.
+```
+</CodeGroup>
+
+### Troubleshooting
+
+```bash
+clanker k8s ask "why is my pod crashing"
+```
+
+<CodeGroup>
+```markdown Output
+## Pod Crash Analysis
+
+I found a pod in CrashLoopBackOff state:
+
+**Pod**: my-app-abc123-xyz
+**Namespace**: default
+**Restarts**: 5
+
+### Recent Logs
+
+```
+Error: Unable to connect to database
+Connection refused at db.default.svc.cluster.local:5432
+```
+
+### Diagnosis
+
+The pod is crashing because it cannot connect to the database service. Common causes:
+
+1. Database service is not running
+2. Incorrect service name or port
+3. Network policy blocking connection
+
+### Recommended Actions
+
+1. Verify the database service exists: `kubectl get svc -n default`
+2. Check database pod status: `kubectl get pods -l app=database`
+3. Review database logs: `kubectl logs -l app=database`
+```
+</CodeGroup>
+
+### Health checks
+
+```bash
+clanker k8s ask "tell me the health of my cluster"
+```
+
+<CodeGroup>
+```markdown Output
+## Cluster Health Report
+
+### Overall Status: Healthy ✓
+
+**Nodes**: 3/3 Ready
+- ip-10-0-1-100: Ready (CPU: 12%, Memory: 38%)
+- ip-10-0-1-101: Ready (CPU: 9%, Memory: 29%)
+- ip-10-0-1-102: Ready (CPU: 15%, Memory: 42%)
+
+**Pods**: 45/45 Running
+- 0 Pending
+- 0 Failed
+- 0 CrashLoopBackOff
+
+**System Components**:
+- CoreDNS: Healthy
+- kube-proxy: Running on all nodes
+- CNI: Operational
+
+Your cluster is operating normally with no issues detected.
+```
+</CodeGroup>
+
+### GKE cluster queries
+
+```bash
+clanker k8s ask --gcp --gcp-project my-project --cluster my-gke-cluster "show me all pods"
+```
+
+### Follow-up questions
+
+The conversation history allows natural follow-ups:
+
+```bash
+clanker k8s ask "how many nodes are in the cluster"
+# Response: "Your cluster has 3 nodes..."
+
+clanker k8s ask "what about their CPU usage"
+# Response references previous context about the 3 nodes
+```
+
+### Error investigation
+
+```bash
+clanker k8s ask "give me error logs for nginx pod"
+```
+
+### Resource recommendations
+
+```bash
+clanker k8s ask "are any pods over-utilizing resources"
+```
+
+<Tip>
+The AI maintains conversation history per cluster, so you can ask follow-up questions that reference previous queries. For example, after asking "show me all pods", you can ask "which one is using the most CPU" without re-specifying the context.
+</Tip>
+
+<Note>
+The `k8s ask` command requires:
+- Valid kubeconfig or access to the specified cluster
+- AI provider configured in your Clanker settings
+- For EKS: AWS credentials with appropriate permissions
+- For GKE: GCP credentials with appropriate permissions
+</Note>

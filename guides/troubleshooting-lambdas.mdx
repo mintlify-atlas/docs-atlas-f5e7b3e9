@@ -1,0 +1,596 @@
+---
+title: Troubleshooting Lambdas
+description: Debug AWS Lambda function errors, performance issues, and integration problems
+---
+
+This guide covers debugging Lambda functions using Clanker's natural language queries and maker mode for fixes.
+
+## Common Lambda issues
+
+Lambda functions can fail for many reasons: timeouts, memory limits, permission errors, cold starts, or integration problems. Clanker helps you diagnose and fix these issues quickly.
+
+## Diagnosing errors
+
+### Check function status
+
+```bash
+# Overall Lambda health
+clanker ask "What's the status of my Lambda functions?"
+
+# Functions with errors
+clanker ask "Show me Lambda functions with high error rates"
+
+# Specific function
+clanker ask "What's the error rate for my-function in the last 24 hours?"
+
+# Recent invocations
+clanker ask "Show me the last 50 invocations of my-function"
+```
+
+**Example output:**
+
+```markdown
+# Lambda Function Status: my-api-handler
+
+## Metrics (Last 24 Hours)
+
+- **Invocations**: 12,453
+- **Errors**: 1,534 (12.3%)
+- **Throttles**: 89
+- **Duration (avg)**: 3,245ms
+- **Timeout**: 3,000ms
+
+## Error Breakdown
+
+### Task timed out after 3.00 seconds (1,245 errors)
+- **Pattern**: Occurs during database queries
+- **First seen**: 2026-03-01 08:23:15
+- **Peak**: 2026-03-01 14:00-16:00 (450 errors/hour)
+
+### Unable to connect to RDS instance (289 errors)
+- **Likely cause**: Security group misconfiguration
+- **VPC subnet**: subnet-abc123 (no route to RDS)
+
+## Recommendations
+
+1. ⚠️ **Increase timeout** from 3s to 10s
+2. 🔒 **Fix VPC networking** - ensure Lambda can reach RDS
+3. 📈 **Add connection pooling** to reduce database connection overhead
+4. 🚨 **Increase reserved concurrency** to prevent throttling
+```
+
+### View CloudWatch Logs
+
+```bash
+# Recent logs
+clanker ask "Show me the last 100 log entries for my-function"
+
+# Search for errors
+clanker ask "Find ERROR in logs for my-function from the last hour"
+
+# Specific time range
+clanker ask "Show me logs for my-function between 2pm and 3pm today"
+
+# Multiple functions
+clanker ask "Search for 'timeout' across all Lambda functions"
+```
+
+### Analyze metrics
+
+```bash
+# Duration trends
+clanker ask "Show me duration trend for my-function over the last 7 days"
+
+# Memory usage
+clanker ask "What's the max memory used by my-function?"
+
+# Concurrent executions
+clanker ask "Show me concurrent execution count for my-function"
+
+# Cold start analysis
+clanker ask "How many cold starts did my-function have today?"
+```
+
+## Common problems and solutions
+
+### Timeout errors
+
+**Symptom**: `Task timed out after X.XX seconds`
+
+**Diagnosis:**
+
+```bash
+# Check current timeout and duration
+clanker ask "What's the timeout and average duration for my-function?"
+
+# Analyze duration distribution
+clanker ask "Show me p50, p90, p99 duration for my-function"
+```
+
+**Fix with maker:**
+
+```bash
+# Increase timeout to 10 seconds
+clanker ask --maker "increase timeout for my-function to 10 seconds"
+
+# Review plan
+cat plan.json
+
+# Apply
+clanker ask --apply < plan.json
+```
+
+The generated plan will include:
+
+```json
+{
+  "commands": [
+    {
+      "args": ["aws", "lambda", "update-function-configuration",
+               "--function-name", "my-function",
+               "--timeout", "10"],
+      "reason": "Increase timeout to 10 seconds"
+    }
+  ]
+}
+```
+
+### Memory errors
+
+**Symptom**: Function runs out of memory or is slow
+
+**Diagnosis:**
+
+```bash
+# Check current memory and usage
+clanker ask "What's the memory allocation and max memory used for my-function?"
+```
+
+**Fix:**
+
+```bash
+# Increase memory allocation
+clanker ask --maker "increase memory for my-function to 1024 MB"
+clanker ask --apply < plan.json
+```
+
+<Tip>
+Increasing Lambda memory also increases CPU allocation. If your function is CPU-bound, more memory can improve performance even if you're not hitting memory limits.
+</Tip>
+
+### Permission errors
+
+**Symptom**: `AccessDeniedException`, `User is not authorized`
+
+**Diagnosis:**
+
+```bash
+# Check current IAM role
+clanker ask "What IAM role does my-function use?"
+
+# View attached policies
+clanker ask "What policies are attached to my-function's role?"
+
+# Check recent permission errors
+clanker ask "Show me AccessDenied errors for my-function"
+```
+
+**Fix:**
+
+```bash
+# Add S3 read permissions
+clanker ask --maker "add S3 read permissions to my-function"
+
+# Add DynamoDB access
+clanker ask --maker "grant my-function access to DynamoDB table my-table"
+
+# Add SQS permissions
+clanker ask --maker "allow my-function to read from SQS queue my-queue"
+```
+
+Clanker will generate appropriate `attach-role-policy` or `put-role-policy` commands.
+
+### VPC connectivity issues
+
+**Symptom**: Cannot connect to RDS, ElastiCache, or other VPC resources
+
+**Diagnosis:**
+
+```bash
+# Check VPC configuration
+clanker ask "What VPC settings does my-function use?"
+
+# Check security groups
+clanker ask "What security groups are attached to my-function?"
+
+# Verify RDS accessibility
+clanker ask "Can my-function reach RDS instance my-db?"
+```
+
+**Fix:**
+
+```bash
+# Add to VPC
+clanker ask --maker "add my-function to VPC vpc-123 in private subnets"
+
+# Update security group
+clanker ask --maker "add security group rule allowing my-function to access RDS on port 5432"
+```
+
+### Throttling
+
+**Symptom**: `Rate exceeded`, invocations rejected
+
+**Diagnosis:**
+
+```bash
+# Check throttles
+clanker ask "How many throttles did my-function have today?"
+
+# Check concurrent executions
+clanker ask "What's the concurrent execution limit for my-function?"
+
+# Account-level concurrency
+clanker ask "What's my Lambda concurrent execution limit?"
+```
+
+**Fix:**
+
+```bash
+# Set reserved concurrency
+clanker ask --maker "set reserved concurrency for my-function to 100"
+
+# Remove reserved concurrency (use unreserved pool)
+clanker ask --maker "remove reserved concurrency from my-function"
+```
+
+<Warning>
+Setting reserved concurrency can prevent other functions from using those execution slots. Use carefully.
+</Warning>
+
+### Cold start performance
+
+**Symptom**: First invocations are slow
+
+**Diagnosis:**
+
+```bash
+# Analyze init duration
+clanker ask "Show me init duration for my-function over the last 24 hours"
+
+# Compare cold vs warm starts
+clanker ask "What's the duration difference between cold and warm starts for my-function?"
+```
+
+**Fixes:**
+
+1. **Provisioned concurrency** (keeps functions warm):
+
+```bash
+clanker ask --maker "add provisioned concurrency of 5 to my-function"
+```
+
+2. **Reduce package size**:
+
+```bash
+clanker ask "What's the deployment package size for my-function?"
+```
+
+3. **Use Lambda layers** for common dependencies
+
+4. **Optimize initialization code** (move outside handler)
+
+### Event source mapping errors
+
+**Symptom**: Lambda not processing SQS/Kinesis/DynamoDB events
+
+**Diagnosis:**
+
+```bash
+# Check event source mappings
+clanker ask "What event sources are configured for my-function?"
+
+# Check mapping status
+clanker ask "Show me event source mapping status for my-function"
+```
+
+**Fix:**
+
+```bash
+# Create SQS event source mapping
+clanker ask --maker "configure my-function to process messages from SQS queue my-queue with batch size 10"
+
+# Update mapping
+clanker ask --maker "update event source mapping for my-function to use batch size 5"
+```
+
+## Advanced debugging
+
+### Enable X-Ray tracing
+
+```bash
+# Enable X-Ray
+clanker ask --maker "enable X-Ray tracing for my-function"
+
+# After enabling, query traces
+clanker ask "Show me X-Ray traces for my-function with errors"
+```
+
+### Dead letter queue
+
+```bash
+# Configure DLQ for failed async invocations
+clanker ask --maker "configure dead letter queue for my-function using SQS queue my-dlq"
+
+# Check DLQ messages
+clanker ask "How many messages are in my-dlq?"
+```
+
+### Lambda Insights
+
+```bash
+# Enable Lambda Insights
+clanker ask --maker "enable Lambda Insights for my-function"
+
+# Query enhanced metrics
+clanker ask "Show me Lambda Insights metrics for my-function"
+```
+
+## Deployment issues
+
+### Function already exists
+
+If you try to create a function that already exists:
+
+```bash
+clanker ask --maker "create a Lambda function named existing-function"
+```
+
+Clanker automatically handles this:
+
+```
+[maker] error: Function already exists
+[maker] remediation: updating existing function code and configuration
+[maker] ✓ function updated successfully
+```
+
+### Invalid runtime
+
+```bash
+# Check available runtimes
+clanker ask "What Lambda runtimes are supported?"
+
+# Update runtime
+clanker ask --maker "update my-function to use Python 3.11 runtime"
+```
+
+### Code package too large
+
+**Symptom**: Deployment package > 50MB (direct upload) or > 250MB (unzipped)
+
+**Solutions:**
+
+1. **Use S3 for large packages**:
+
+```bash
+# Upload to S3 first
+aws s3 cp my-function.zip s3://my-bucket/lambda/my-function.zip
+
+# Deploy from S3
+clanker ask --maker "update my-function code from S3 bucket my-bucket key lambda/my-function.zip"
+```
+
+2. **Use Lambda layers for dependencies**
+
+3. **Remove unnecessary files** from package
+
+## Monitoring and alerting
+
+### Set up alarms
+
+```bash
+# Alarm for errors
+clanker ask --maker "create CloudWatch alarm for my-function errors exceeding 10 per minute"
+
+# Alarm for duration
+clanker ask --maker "create alarm when my-function duration exceeds 5 seconds"
+
+# Alarm for throttles
+clanker ask --maker "alert me when my-function has more than 5 throttles in 5 minutes"
+```
+
+### Check alarm status
+
+```bash
+# Current alarms
+clanker ask "Show me CloudWatch alarms for my Lambda functions"
+
+# Recent alarm triggers
+clanker ask "What alarms fired in the last 24 hours?"
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Monitor error rates" icon="chart-line">
+    Set up CloudWatch alarms for error rates above 1%. Investigate immediately when alarms trigger.
+  </Card>
+  
+  <Card title="Right-size memory" icon="gauge">
+    Monitor max memory used vs. allocated. Start with 512MB and adjust based on actual usage.
+  </Card>
+  
+  <Card title="Use VPC sparingly" icon="network-wired">
+    VPC Lambdas have slower cold starts. Only use VPC when accessing private resources.
+  </Card>
+  
+  <Card title="Handle retries" icon="rotate">
+    Implement idempotency for functions. AWS automatically retries failed invocations.
+  </Card>
+</CardGroup>
+
+## Troubleshooting workflow
+
+<Steps>
+
+<Step title="Identify the problem">
+
+```bash
+# Get overview
+clanker ask "Show me Lambda function health status"
+
+# Focus on failing function
+clanker ask "Show me errors for my-function in the last hour"
+```
+
+</Step>
+
+<Step title="Analyze logs and metrics">
+
+```bash
+# Check logs for error patterns
+clanker ask "Find ERROR in my-function logs from the last 2 hours"
+
+# Check metrics
+clanker ask "Show me duration, memory, and error metrics for my-function"
+```
+
+</Step>
+
+<Step title="Generate fix plan">
+
+```bash
+# Example: timeout issue
+clanker ask --maker "increase timeout for my-function to 30 seconds and memory to 1024 MB" > fix-plan.json
+
+# Review plan
+cat fix-plan.json
+```
+
+</Step>
+
+<Step title="Apply fix">
+
+```bash
+# Apply the fix
+clanker ask --apply < fix-plan.json
+
+# Verify
+clanker ask "What's the current configuration for my-function?"
+```
+
+</Step>
+
+<Step title="Monitor results">
+
+```bash
+# Wait 10-15 minutes for new data
+sleep 900
+
+# Check if errors decreased
+clanker ask "Show me error rate for my-function in the last 15 minutes"
+```
+
+</Step>
+
+</Steps>
+
+## Example: Complete troubleshooting session
+
+```bash
+# 1. Identify issue
+$ clanker ask "Show me Lambda functions with high error rates"
+# Output shows 'email-processor' has 15% error rate
+
+# 2. Investigate
+$ clanker ask "Show me errors for email-processor in the last hour"
+# Output shows 'Task timed out after 3.00 seconds'
+
+# 3. Check configuration
+$ clanker ask "What's the timeout and average duration for email-processor?"
+# Timeout: 3s, Avg duration: 2.8s (very close to timeout)
+
+# 4. Generate fix
+$ clanker ask --maker "increase timeout for email-processor to 10 seconds" > fix.json
+
+# 5. Review and apply
+$ cat fix.json
+$ clanker ask --apply < fix.json
+
+# 6. Verify (after a few minutes)
+$ clanker ask "Show me error rate for email-processor in the last 10 minutes"
+# Error rate: 0.5% (issue resolved)
+```
+
+## Troubleshooting tips
+
+<AccordionGroup>
+  <Accordion title="Function works locally but fails in Lambda">
+    Common causes:
+    
+    - **Environment differences**: Check environment variables
+    - **File paths**: Lambda runs from `/var/task`, not your local directory
+    - **Permissions**: Local AWS credentials vs. Lambda execution role
+    - **Dependencies**: Missing packages in deployment zip
+    
+    ```bash
+    # Check environment variables
+    clanker ask "What environment variables are set for my-function?"
+    
+    # Check execution role
+    clanker ask "What IAM role and policies does my-function have?"
+    ```
+  </Accordion>
+  
+  <Accordion title="Intermittent failures">
+    Intermittent failures often indicate:
+    
+    - **Concurrent execution limits**: Check throttles
+    - **Downstream service issues**: RDS, API endpoints
+    - **Cold starts**: First invocations may timeout
+    
+    ```bash
+    # Check for throttles
+    clanker ask "Show me throttle count for my-function over the last 24 hours"
+    
+    # Check concurrent executions
+    clanker ask "What's the max concurrent executions for my-function today?"
+    ```
+  </Accordion>
+  
+  <Accordion title="Can't update function code">
+    If updates fail:
+    
+    ```bash
+    # Check function state
+    clanker ask "What's the current state of my-function?"
+    
+    # If state is 'Pending', wait for update to complete
+    # If state is 'Failed', check last update status
+    clanker ask "Show me the last update status for my-function"
+    
+    # Manual retry
+    clanker ask --maker --apply "update code for my-function from S3"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Set up comprehensive Lambda monitoring
+  </Card>
+  
+  <Card title="Security best practices" href="/guides/security" icon="shield">
+    Secure Lambda functions and execution roles
+  </Card>
+  
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Optimize Lambda memory and concurrency for cost
+  </Card>
+  
+  <Card title="Creating infrastructure" href="/guides/creating-infrastructure" icon="cloud">
+    Use maker mode to create Lambda functions
+  </Card>
+</CardGroup>

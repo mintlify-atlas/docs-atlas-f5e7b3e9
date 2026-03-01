@@ -1,0 +1,254 @@
+---
+title: clanker ask
+description: Ask natural language questions about your cloud infrastructure
+---
+
+The `ask` command allows you to query your cloud infrastructure using natural language. The AI analyzes your question, determines what operations are needed, executes them, and provides a comprehensive response.
+
+## Usage
+
+```bash
+clanker ask [question] [flags]
+```
+
+## Examples
+
+<CodeGroup>
+```bash AWS
+# Query EC2 instances
+clanker ask "What EC2 instances are running?"
+
+# Check Lambda functions with errors
+clanker ask "Show me lambda functions with high error rates"
+
+# RDS instance status
+clanker ask "What's the current RDS instance status?"
+```
+
+```bash GCP
+# Query Cloud Run services
+clanker ask --gcp "List Cloud Run services"
+
+# Check Compute Engine instances
+clanker ask --gcp "Show me all VM instances"
+```
+
+```bash GitHub
+# Workflow status
+clanker ask "Show me GitHub Actions workflow status"
+
+# Open pull requests
+clanker ask "What pull requests are open?"
+```
+
+```bash Kubernetes
+# Pod status
+clanker ask --cluster my-cluster "how many pods are running"
+
+# Error logs
+clanker ask "give me error logs for nginx pod"
+```
+</CodeGroup>
+
+## Cloud provider flags
+
+<ParamField path="--aws" type="boolean" default="false">
+  Include AWS infrastructure context in the query
+</ParamField>
+
+<ParamField path="--gcp" type="boolean" default="false">
+  Include GCP infrastructure context in the query
+</ParamField>
+
+<ParamField path="--azure" type="boolean" default="false">
+  Include Azure infrastructure context in the query
+</ParamField>
+
+<ParamField path="--cloudflare" type="boolean" default="false">
+  Include Cloudflare infrastructure context in the query
+</ParamField>
+
+<ParamField path="--github" type="boolean" default="false">
+  Include GitHub repository context in the query
+</ParamField>
+
+<ParamField path="--terraform" type="boolean" default="false">
+  Include Terraform workspace context in the query
+</ParamField>
+
+<ParamField path="--iam" type="boolean" default="false">
+  Route query to IAM agent for security analysis
+</ParamField>
+
+## AWS-specific flags
+
+<ParamField path="--profile" type="string">
+  AWS profile to use for infrastructure queries
+</ParamField>
+
+<ParamField path="--discovery" type="boolean" default="false">
+  Run comprehensive infrastructure discovery across all AWS services
+</ParamField>
+
+<ParamField path="--compliance" type="boolean" default="false">
+  Generate compliance report showing all services, ports, and protocols (SSP format)
+</ParamField>
+
+## GCP-specific flags
+
+<ParamField path="--gcp-project" type="string">
+  GCP project ID to use for infrastructure queries
+</ParamField>
+
+## Azure-specific flags
+
+<ParamField path="--azure-subscription" type="string">
+  Azure subscription ID to use for infrastructure queries
+</ParamField>
+
+## IAM-specific flags
+
+<ParamField path="--role-arn" type="string">
+  Scope IAM query to a specific role ARN
+</ParamField>
+
+<ParamField path="--policy-arn" type="string">
+  Scope IAM query to a specific policy ARN
+</ParamField>
+
+## Terraform flags
+
+<ParamField path="--workspace" type="string">
+  Terraform workspace to use for infrastructure queries
+</ParamField>
+
+## AI provider flags
+
+<ParamField path="--ai-profile" type="string">
+  AI profile to use (overrides config default)
+</ParamField>
+
+<ParamField path="--openai-key" type="string">
+  OpenAI API key (overrides config)
+</ParamField>
+
+<ParamField path="--anthropic-key" type="string">
+  Anthropic API key (overrides config)
+</ParamField>
+
+<ParamField path="--gemini-key" type="string">
+  Gemini API key (overrides config and env vars)
+</ParamField>
+
+<ParamField path="--deepseek-key" type="string">
+  DeepSeek API key (overrides config)
+</ParamField>
+
+<ParamField path="--minimax-key" type="string">
+  MiniMax API key (overrides config)
+</ParamField>
+
+<ParamField path="--openai-model" type="string">
+  OpenAI model to use (overrides config)
+</ParamField>
+
+<ParamField path="--anthropic-model" type="string">
+  Anthropic model to use (overrides config)
+</ParamField>
+
+<ParamField path="--gemini-model" type="string">
+  Gemini model to use (overrides config)
+</ParamField>
+
+<ParamField path="--deepseek-model" type="string">
+  DeepSeek model to use (overrides config)
+</ParamField>
+
+<ParamField path="--minimax-model" type="string">
+  MiniMax model to use (overrides config)
+</ParamField>
+
+## Maker mode flags
+
+<ParamField path="--maker" type="boolean" default="false">
+  Generate an AWS, GCP, Azure, or Cloudflare CLI plan (JSON) for infrastructure changes instead of executing a query
+</ParamField>
+
+<ParamField path="--destroyer" type="boolean" default="false">
+  Allow destructive operations when using `--maker` (requires explicit confirmation)
+</ParamField>
+
+<ParamField path="--apply" type="boolean" default="false">
+  Apply an approved maker plan (reads from stdin unless `--plan-file` is provided)
+</ParamField>
+
+<ParamField path="--plan-file" type="string">
+  Path to maker plan JSON file for `--apply`
+</ParamField>
+
+## Advanced flags
+
+<ParamField path="--agent-trace" type="boolean" default="false">
+  Show detailed coordinator agent lifecycle logs (overrides config)
+</ParamField>
+
+<ParamField path="--route-only" type="boolean" default="false">
+  Return routing decision as JSON without executing (for backend integration)
+</ParamField>
+
+## Discovery mode
+
+Discovery mode enables comprehensive infrastructure analysis:
+
+```bash
+clanker ask --discovery "Show me all AWS services"
+```
+
+This automatically:
+- Enables AWS and Terraform contexts
+- Scans all active AWS services
+- Includes IAM roles and permissions
+- Provides complete infrastructure inventory
+
+## Compliance mode
+
+Generate SSP (System Security Plan) compliance reports:
+
+```bash
+clanker ask --compliance
+```
+
+Output includes:
+- Reference number for each service
+- System name and vendor
+- Ports and protocols used
+- External IP addresses
+- Security measures and mitigations
+- Hosting environment details
+- Risk/impact analysis
+
+## Tool calling
+
+When AWS or GitHub contexts are enabled, the AI can execute operations:
+
+```bash
+# AI will call AWS APIs to list instances
+clanker ask --aws "Show me all EC2 instances in us-west-2"
+
+# AI will call GitHub APIs to list workflows
+clanker ask --github "Show me failed workflow runs"
+```
+
+## Output
+
+The command outputs markdown-formatted responses with:
+- Structured tables for resource listings
+- Code blocks for configuration details
+- Links to relevant documentation
+- Actionable recommendations
+
+## See also
+
+- [AWS maker command](/commands/aws/maker) - Generate infrastructure plans
+- [AWS apply command](/commands/aws/apply) - Execute infrastructure plans
+- [Configuration](/commands/config) - Configure AI providers and credentials

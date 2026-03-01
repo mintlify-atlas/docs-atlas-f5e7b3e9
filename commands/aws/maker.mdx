@@ -1,0 +1,355 @@
+---
+title: clanker aws maker
+description: Generate infrastructure-as-code plans for AWS using natural language
+---
+
+The AWS maker mode generates JSON execution plans for infrastructure changes using natural language prompts. Plans contain AWS CLI commands that can be reviewed before execution.
+
+## Usage
+
+```bash
+clanker ask --maker "[infrastructure change request]"
+```
+
+## How it works
+
+1. You describe the infrastructure change in natural language
+2. AI generates a JSON plan with AWS CLI commands
+3. You review the plan
+4. You apply the plan with `clanker ask --apply`
+
+## Examples
+
+<CodeGroup>
+```bash Create resources
+# Create an S3 bucket
+clanker ask --maker "create an s3 bucket for logs"
+
+# Create a Lambda function
+clanker ask --maker "create a lambda function that processes uploads"
+
+# Create a VPC
+clanker ask --maker "create a vpc with public and private subnets"
+```
+
+```bash Modify resources
+# Update bucket policy
+clanker ask --maker "make the logs bucket public"
+
+# Scale instances
+clanker ask --maker "increase lambda memory to 512MB"
+
+# Update security group
+clanker ask --maker "allow https traffic to web security group"
+```
+
+```bash Delete resources
+# Delete with destroyer flag
+clanker ask --maker --destroyer "delete the test s3 bucket"
+
+# Clean up resources
+clanker ask --maker --destroyer "remove all unused EBS volumes"
+```
+
+```bash Complex changes
+# Multi-resource deployment
+clanker ask --maker "deploy a containerized app with ALB, ECS, and RDS"
+
+# Infrastructure migration
+clanker ask --maker "migrate data from old bucket to new bucket"
+```
+</CodeGroup>
+
+## Flags
+
+<ParamField path="--maker" type="boolean" default="false" required>
+  Enable maker mode to generate infrastructure plans
+</ParamField>
+
+<ParamField path="--destroyer" type="boolean" default="false">
+  Allow destructive operations (deletions, replacements) in the plan
+</ParamField>
+
+<ParamField path="--aws" type="boolean" default="false">
+  Explicitly set provider to AWS (inferred automatically if not specified)
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  AWS profile to use for plan generation and dependency resolution
+</ParamField>
+
+<ParamField path="--ai-profile" type="string">
+  AI profile to use for plan generation
+</ParamField>
+
+<ParamField path="--openai-key" type="string">
+  OpenAI API key (overrides config)
+</ParamField>
+
+<ParamField path="--anthropic-key" type="string">
+  Anthropic API key (overrides config)
+</ParamField>
+
+<ParamField path="--gemini-key" type="string">
+  Gemini API key (overrides config)
+</ParamField>
+
+<ParamField path="--deepseek-key" type="string">
+  DeepSeek API key (overrides config)
+</ParamField>
+
+<ParamField path="--minimax-key" type="string">
+  MiniMax API key (overrides config)
+</ParamField>
+
+## Plan structure
+
+Generated plans follow this JSON schema:
+
+```json
+{
+  "version": 1,
+  "createdAt": "2026-03-01T10:30:00Z",
+  "provider": "aws",
+  "question": "create an s3 bucket for logs",
+  "summary": "Create S3 bucket with logging configuration",
+  "commands": [
+    {
+      "args": ["s3api", "create-bucket", "--bucket", "my-logs-bucket"],
+      "reason": "Create the S3 bucket",
+      "produces": {
+        "BUCKET_NAME": "my-logs-bucket"
+      }
+    },
+    {
+      "args": [
+        "s3api",
+        "put-bucket-versioning",
+        "--bucket",
+        "${BUCKET_NAME}",
+        "--versioning-configuration",
+        "Status=Enabled"
+      ],
+      "reason": "Enable versioning for compliance"
+    }
+  ],
+  "notes": [
+    "Bucket will be created in us-east-1",
+    "Versioning enabled for data protection"
+  ]
+}
+```
+
+### Plan fields
+
+<ResponseField name="version" type="integer" required>
+  Plan schema version (currently 1)
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 timestamp when plan was generated
+</ResponseField>
+
+<ResponseField name="provider" type="string" required>
+  Cloud provider (`aws`, `gcp`, `azure`, or `cloudflare`)
+</ResponseField>
+
+<ResponseField name="question" type="string" required>
+  Original natural language request
+</ResponseField>
+
+<ResponseField name="summary" type="string" required>
+  Human-readable description of what the plan does
+</ResponseField>
+
+<ResponseField name="commands" type="array" required>
+  Array of AWS CLI commands to execute
+</ResponseField>
+
+<ResponseField name="notes" type="array">
+  Optional notes about the plan (warnings, prerequisites, etc.)
+</ResponseField>
+
+### Command fields
+
+<ResponseField name="args" type="array" required>
+  AWS CLI command arguments as individual tokens
+</ResponseField>
+
+<ResponseField name="reason" type="string">
+  Explanation of why this command is needed
+</ResponseField>
+
+<ResponseField name="produces" type="object">
+  Output variables produced by this command (e.g., resource IDs, ARNs)
+</ResponseField>
+
+## Variable substitution
+
+Plans support variable substitution using `${VARIABLE_NAME}` syntax:
+
+```json
+{
+  "commands": [
+    {
+      "args": ["ec2", "create-vpc", "--cidr-block", "10.0.0.0/16"],
+      "produces": {"VPC_ID": "output:VpcId"}
+    },
+    {
+      "args": [
+        "ec2",
+        "create-subnet",
+        "--vpc-id",
+        "${VPC_ID}",
+        "--cidr-block",
+        "10.0.1.0/24"
+      ]
+    }
+  ]
+}
+```
+
+The `${VPC_ID}` will be replaced with the actual VPC ID from the first command's output.
+
+## Plan enrichment
+
+During generation, plans are automatically enriched with:
+
+### Dependency resolution
+- VPC IDs for subnet/security group commands
+- Subnet IDs for EC2/RDS commands
+- Security group IDs for ingress/egress rules
+- ARNs for IAM policies
+
+### Validation
+- Command syntax validation
+- Required parameter checks
+- Resource naming constraints
+- Region availability
+
+### Safety checks
+- Destructive operation warnings
+- Resource dependency analysis
+- Conflict detection
+
+## Destroyer mode
+
+By default, maker won't generate destructive operations. Use `--destroyer` to allow:
+
+- Resource deletions (`delete-bucket`, `delete-stack`, etc.)
+- Replacements that cause downtime
+- Data loss operations
+- Network disruptions
+
+```bash
+# Safe operations only (default)
+clanker ask --maker "update lambda timeout"
+
+# Allow destructive operations
+clanker ask --maker --destroyer "delete old test resources"
+```
+
+<Warning>
+Always review destroyer plans carefully. The `--destroyer` flag allows operations that delete data or cause service interruptions.
+</Warning>
+
+## Multi-cloud support
+
+Maker automatically detects the target cloud provider:
+
+```bash
+# AWS (default)
+clanker ask --maker "create s3 bucket"
+
+# GCP (auto-detected)
+clanker ask --maker "create cloud storage bucket"
+
+# Azure (auto-detected)
+clanker ask --maker "create storage account"
+
+# Cloudflare (auto-detected)
+clanker ask --maker "create dns zone"
+
+# Explicit provider
+clanker ask --maker --gcp "create cloud storage bucket"
+```
+
+## Saving and applying plans
+
+```bash
+# Generate and save plan
+clanker ask --maker "create s3 bucket" > plan.json
+
+# Review the plan
+cat plan.json | jq
+
+# Apply the plan
+clanker ask --apply --plan-file plan.json
+```
+
+## Best practices
+
+<Tip>
+**Be specific in your requests**
+
+Instead of "create a database", say "create a PostgreSQL RDS instance with 20GB storage in us-east-1".
+</Tip>
+
+<Tip>
+**Review plans before applying**
+
+Always review the generated plan, especially when using `--destroyer` flag.
+</Tip>
+
+<Tip>
+**Use version control**
+
+Store plans in git to track infrastructure changes over time:
+
+```bash
+clanker ask --maker "create vpc" > plans/vpc-$(date +%Y%m%d).json
+git add plans/
+git commit -m "Add VPC creation plan"
+```
+</Tip>
+
+<Tip>
+**Test in non-production first**
+
+Use `--profile dev` to test plans in development environments before applying to production.
+</Tip>
+
+## Troubleshooting
+
+### Plan generation fails
+
+```bash
+# Enable debug mode to see detailed logs
+clanker ask --maker --debug "create s3 bucket"
+```
+
+### Invalid plan structure
+
+If the AI generates an invalid plan, the parser will retry up to 4 times with corrections. Common issues:
+
+- Empty commands array → AI regenerates with at least one command
+- Invalid JSON → AI outputs valid JSON without markdown code fences
+- Missing args → AI ensures all commands have non-empty args arrays
+
+### Dependency resolution errors
+
+If plan generation fails due to missing dependencies:
+
+```bash
+# Ensure AWS credentials are configured
+aws configure list
+
+# Verify profile has necessary permissions
+aws sts get-caller-identity --profile dev
+```
+
+## See also
+
+- [AWS apply command](/commands/aws/apply) - Execute generated plans
+- [Ask command](/commands/ask) - Natural language infrastructure queries
+- [AWS commands overview](/commands/aws/overview) - All AWS commands

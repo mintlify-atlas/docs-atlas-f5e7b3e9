@@ -1,0 +1,506 @@
+---
+title: Multi-cloud
+description: How Clanker supports AWS, GCP, Azure, and Cloudflare with a unified natural language interface
+---
+
+Clanker provides a **unified natural language interface** across multiple cloud providers. You can ask questions or generate infrastructure plans for AWS, GCP, Azure, and Cloudflare using the same CLI.
+
+## Supported providers
+
+<CardGroup cols={2}>
+  <Card title="AWS" icon="aws">
+    **Agent**: `internal/aws/`  
+    **CLI**: `aws`  
+    **Services**: EC2, Lambda, S3, RDS, ECS, EKS, CloudWatch, etc.
+  </Card>
+  
+  <Card title="GCP" icon="google">
+    **Agent**: `internal/gcp/`  
+    **CLI**: `gcloud`  
+    **Services**: Compute Engine, Cloud Run, GKE, BigQuery, etc.
+  </Card>
+  
+  <Card title="Azure" icon="microsoft">
+    **Agent**: `internal/azure/`  
+    **CLI**: `az`  
+    **Services**: App Service, Cosmos DB, AKS, Functions, etc.
+  </Card>
+  
+  <Card title="Cloudflare" icon="cloudflare">
+    **Agent**: `internal/cloudflare/`  
+    **CLI**: `wrangler` / API  
+    **Services**: Workers, KV, D1, R2, WAF, DNS, Zero Trust
+  </Card>
+</CardGroup>
+
+## How routing works
+
+Clanker automatically detects which provider to use based on your question:
+
+<Steps>
+  <Step title="Keyword detection">
+    The routing system checks for provider-specific keywords:
+    
+    - **AWS**: `ec2`, `lambda`, `s3`, `rds`, `cloudwatch`, `dynamodb`
+    - **GCP**: `gcloud`, `compute engine`, `cloud run`, `bigquery`, `gke`
+    - **Azure**: `azure`, `app service`, `cosmos db`, `aks`, `functions`
+    - **Cloudflare**: `cloudflare`, `workers`, `waf`, `dns`, `tunnel`
+  </Step>
+  
+  <Step title="LLM classification (if ambiguous)">
+    If multiple providers are detected, an LLM classifies the question.
+    
+    See [`internal/routing/classifier.go`](https://github.com/bgdnvk/clanker/blob/main/internal/routing/classifier.go).
+  </Step>
+  
+  <Step title="Agent dispatch">
+    The appropriate agent handles the request:
+    - **AWS agent**: Multi-agent architecture with semantic analysis
+    - **GCP agent**: GCP CLI operations and resource queries
+    - **Azure agent**: Azure CLI operations and resource queries
+    - **Cloudflare agent**: Sub-agents for Workers, WAF, DNS, Zero Trust, Analytics
+  </Step>
+</Steps>
+
+<CodeGroup>
+```go Routing logic (cmd/ask.go:546-606)
+if !includeAWS && !includeGitHub && !includeTerraform && !includeGCP && !includeAzure && !includeCloudflare {
+    routingQuestion := questionForRouting(question)
+
+    // First, do quick keyword check for explicit terms
+    svcCtx := routing.InferContext(routingQuestion)
+    includeAWS = svcCtx.AWS
+    includeGitHub = svcCtx.GitHub
+
+    if debug {
+        fmt.Printf("Keyword inference: AWS=%v, GitHub=%v, Terraform=%v, K8s=%v, GCP=%v, Cloudflare=%v\n",
+            svcCtx.AWS, svcCtx.GitHub, svcCtx.Terraform, svcCtx.K8s, svcCtx.GCP, svcCtx.Cloudflare)
+    }
+
+    // For ambiguous queries (multiple services detected or Cloudflare detected),
+    // use LLM to make the final routing decision
+    if routing.NeedsLLMClassification(svcCtx) {
+        if debug {
+            fmt.Println("[routing] Ambiguous query detected, using LLM for classification...")
+        }
+
+        llmService, err := routing.ClassifyWithLLM(context.Background(), routingQuestion, debug)
+        if err != nil {
+            // FALLBACK: LLM classification failed, use keyword-based inference
+            if debug {
+                fmt.Printf("[routing] LLM classification failed (%v), falling back to keyword inference\n", err)
+            }
+            // Keep the keyword-inferred values as-is (no changes needed)
+        } else {
+            // LLM succeeded - override keyword-based inference with LLM decision
+            routing.ApplyLLMClassification(&svcCtx, llmService)
+
+            if debug {
+                fmt.Printf("LLM override: AWS=%v, K8s=%v, GCP=%v, Azure=%v, Cloudflare=%v\n",
+                    svcCtx.AWS, svcCtx.K8s, svcCtx.GCP, svcCtx.Azure, svcCtx.Cloudflare)
+            }
+        }
+    }
+
+    // Handle inferred Terraform context
+    if svcCtx.Terraform {
+        includeTerraform = true
+    }
+
+    if svcCtx.GCP {
+        includeGCP = true
+    }
+
+    if svcCtx.Azure {
+        includeAzure = true
+    }
+
+    // Update includeAWS and includeGitHub from service context
+    includeAWS = svcCtx.AWS
+    includeGitHub = svcCtx.GitHub
+    includeAzure = svcCtx.Azure
+
+    // Handle Cloudflare queries by delegating to Cloudflare agent
+    if svcCtx.Cloudflare {
+        return handleCloudflareQuery(context.Background(), routingQuestion, debug)
+    }
+}
+```
+</CodeGroup>
+
+## Provider-specific features
+
+### AWS
+
+The AWS agent uses the multi-agent architecture with semantic analysis:
+
+- **Parallel agents**: Log, Metrics, Infrastructure, Security, Performance, Cost, etc.
+- **Decision trees**: Maps user intent to agent strategies
+- **Tool calling**: LLM can execute AWS CLI operations directly
+
+```bash
+clanker ask "Why is my Lambda function timing out?"
+```
+
+See [AI agents](/concepts/ai-agents) for details.
+
+### GCP
+
+The GCP agent queries Google Cloud resources using the `gcloud` CLI:
+
+```bash
+clanker ask --gcp "List all Cloud Run services"
+```
+
+Supported operations:
+- List Compute Engine instances
+- Query Cloud Run services
+- Inspect GKE clusters
+- Check BigQuery datasets
+- View Cloud Functions
+
+### Azure
+
+The Azure agent queries Azure resources using the `az` CLI:
+
+```bash
+clanker ask --azure "Show me all App Services"
+```
+
+Supported operations:
+- List App Services
+- Query Cosmos DB accounts
+- Inspect AKS clusters
+- View Azure Functions
+- Check storage accounts
+
+### Cloudflare
+
+The Cloudflare agent routes to **specialized sub-agents**:
+
+<AccordionGroup>
+  <Accordion title="WAF agent" icon="shield-halved">
+    Manages firewall rules, rate limiting, and DDoS protection.
+    
+    ```bash
+    clanker ask --cloudflare "Show all WAF rules"
+    ```
+    
+    Keywords: `firewall`, `waf`, `rate limit`, `ddos`, `bot`, `security level`
+  </Accordion>
+  
+  <Accordion title="Workers agent" icon="code">
+    Manages Workers, KV, D1, R2, Durable Objects, and Pages.
+    
+    ```bash
+    clanker ask --cloudflare "List all Workers"
+    ```
+    
+    Keywords: `worker`, `kv`, `d1`, `r2`, `pages`, `durable object`
+  </Accordion>
+  
+  <Accordion title="Analytics agent" icon="chart-bar">
+    Queries traffic, bandwidth, and performance metrics.
+    
+    ```bash
+    clanker ask --cloudflare "Show traffic analytics for the last 24 hours"
+    ```
+    
+    Keywords: `analytics`, `traffic`, `bandwidth`, `requests`, `visitors`, `performance metrics`
+  </Accordion>
+  
+  <Accordion title="Zero Trust agent" icon="lock">
+    Manages Tunnels, Access apps, and policies.
+    
+    ```bash
+    clanker ask --cloudflare "List all Cloudflare Tunnels"
+    ```
+    
+    Keywords: `tunnel`, `access app`, `access policy`, `zero trust`, `cloudflared`, `warp`
+  </Accordion>
+  
+  <Accordion title="DNS agent" icon="globe">
+    Manages DNS records and zones.
+    
+    ```bash
+    clanker ask --cloudflare "Show DNS records for example.com"
+    ```
+    
+    Keywords: `dns`, `record`, `zone`, `domain`
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```go Cloudflare routing (cmd/ask.go:1365-1440)
+questionLower := strings.ToLower(question)
+
+// Check for WAF/Security queries
+isWAF := strings.Contains(questionLower, "firewall") ||
+    strings.Contains(questionLower, "waf") ||
+    strings.Contains(questionLower, "rate limit") ||
+    strings.Contains(questionLower, "security level") ||
+    strings.Contains(questionLower, "under attack") ||
+    strings.Contains(questionLower, "ddos") ||
+    strings.Contains(questionLower, "bot")
+
+if isWAF {
+    wafAgent := cfwaf.NewSubAgent(client, debug)
+    opts := cfwaf.QueryOptions{}
+    response, err := wafAgent.HandleQuery(ctx, question, opts)
+    // ...
+}
+
+// Check for Workers queries
+isWorkers := strings.Contains(questionLower, "worker") ||
+    strings.Contains(questionLower, "kv") ||
+    strings.Contains(questionLower, "d1") ||
+    strings.Contains(questionLower, "r2") ||
+    strings.Contains(questionLower, "pages") ||
+    strings.Contains(questionLower, "durable object")
+
+if isWorkers {
+    workersAgent := cfworkers.NewSubAgent(client, debug)
+    opts := cfworkers.QueryOptions{
+        AccountID: client.GetAccountID(),
+    }
+    response, err := workersAgent.HandleQuery(ctx, question, opts)
+    // ...
+}
+```
+</CodeGroup>
+
+## Maker mode: Multi-cloud plans
+
+Maker mode supports **all four providers** for infrastructure automation:
+
+### AWS plans
+
+```bash
+clanker ask --maker "Create an S3 bucket with encryption"
+```
+
+Generates a plan with `"provider": "aws"` and `aws` CLI commands.
+
+### GCP plans
+
+```bash
+clanker ask --maker --gcp "Deploy a Cloud Run service"
+```
+
+Generates a plan with `"provider": "gcp"` and `gcloud` commands.
+
+### Azure plans
+
+```bash
+clanker ask --maker --azure "Create an App Service"
+```
+
+Generates a plan with `"provider": "azure"` and `az` commands.
+
+### Cloudflare plans
+
+```bash
+clanker ask --maker --cloudflare "Deploy a Cloudflare Worker"
+```
+
+Generates a plan with `"provider": "cloudflare"` and `wrangler` commands.
+
+<CodeGroup>
+```go Provider detection (cmd/ask.go:300-354)
+makerProvider := "aws"
+makerProviderReason := "default"
+explicitGCP := cmd.Flags().Changed("gcp") && includeGCP
+explicitAWS := cmd.Flags().Changed("aws") && includeAWS
+explicitCloudflare := cmd.Flags().Changed("cloudflare") && includeCloudflare
+explicitAzure := cmd.Flags().Changed("azure") && includeAzure
+explicitCount := 0
+if explicitGCP {
+    explicitCount++
+}
+if explicitAWS {
+    explicitCount++
+}
+if explicitCloudflare {
+    explicitCount++
+}
+if explicitAzure {
+    explicitCount++
+}
+if explicitCount > 1 {
+    return fmt.Errorf("cannot use multiple provider flags (--aws, --gcp, --azure, --cloudflare) together with --maker")
+}
+switch {
+case explicitCloudflare:
+    makerProvider = "cloudflare"
+    makerProviderReason = "explicit"
+case explicitAzure:
+    makerProvider = "azure"
+    makerProviderReason = "explicit"
+case explicitGCP:
+    makerProvider = "gcp"
+    makerProviderReason = "explicit"
+case explicitAWS:
+    makerProvider = "aws"
+    makerProviderReason = "explicit"
+default:
+    svcCtx := routing.InferContext(questionForRouting(question))
+    if svcCtx.Cloudflare {
+        makerProvider = "cloudflare"
+        makerProviderReason = "inferred"
+    } else if svcCtx.Azure {
+        makerProvider = "azure"
+        makerProviderReason = "inferred"
+    } else if svcCtx.GCP {
+        makerProvider = "gcp"
+        makerProviderReason = "inferred"
+    }
+}
+
+_, _ = fmt.Fprintf(os.Stderr, "[maker] provider=%s (%s)\n", makerProvider, makerProviderReason)
+```
+</CodeGroup>
+
+## Credential management
+
+Clanker supports multiple credential sources:
+
+### AWS
+
+<Tabs>
+  <Tab title="AWS profiles">
+    Uses standard AWS profiles from `~/.aws/config`:
+    
+    ```bash
+    clanker ask "List EC2 instances" --profile production
+    ```
+  </Tab>
+  
+  <Tab title="Environment variables">
+    Falls back to `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`.
+  </Tab>
+  
+  <Tab title="Backend API">
+    Retrieves credentials from Clanker Cloud backend:
+    
+    ```bash
+    clanker ask "List EC2 instances" --api-key YOUR_API_KEY
+    ```
+  </Tab>
+</Tabs>
+
+### GCP
+
+<Tabs>
+  <Tab title="Application Default Credentials">
+    Uses `gcloud auth application-default login`.
+  </Tab>
+  
+  <Tab title="Service account JSON">
+    Reads from `GOOGLE_APPLICATION_CREDENTIALS` env var.
+  </Tab>
+  
+  <Tab title="Backend API">
+    Retrieves credentials from Clanker Cloud backend.
+  </Tab>
+</Tabs>
+
+### Azure
+
+<Tabs>
+  <Tab title="Azure CLI authentication">
+    Uses `az login` credentials.
+  </Tab>
+  
+  <Tab title="Environment variables">
+    Falls back to `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
+  </Tab>
+  
+  <Tab title="Backend API">
+    Retrieves credentials from Clanker Cloud backend.
+  </Tab>
+</Tabs>
+
+### Cloudflare
+
+<Tabs>
+  <Tab title="API token">
+    Uses `CLOUDFLARE_API_TOKEN` or `CF_API_TOKEN` env var.
+  </Tab>
+  
+  <Tab title="Config file">
+    Reads from `~/.clanker.yaml`:
+    
+    ```yaml
+    cloudflare:
+      api_token: YOUR_API_TOKEN
+      account_id: YOUR_ACCOUNT_ID
+    ```
+  </Tab>
+  
+  <Tab title="Backend API">
+    Retrieves credentials from Clanker Cloud backend.
+  </Tab>
+</Tabs>
+
+## Force provider selection
+
+Override automatic routing with explicit flags:
+
+```bash
+# Force AWS agent
+clanker ask "List instances" --aws
+
+# Force GCP agent
+clanker ask "List instances" --gcp
+
+# Force Azure agent
+clanker ask "List instances" --azure
+
+# Force Cloudflare agent
+clanker ask "List zones" --cloudflare
+```
+
+## Example workflows
+
+### Query across providers
+
+```bash
+# AWS
+clanker ask "Show Lambda functions with high error rates"
+
+# GCP
+clanker ask --gcp "List Cloud Run services in us-central1"
+
+# Azure
+clanker ask --azure "Show all App Services in East US"
+
+# Cloudflare
+clanker ask --cloudflare "Show WAF rules blocking traffic"
+```
+
+### Generate multi-cloud plans
+
+```bash
+# AWS S3 bucket
+clanker ask --maker "Create an S3 bucket for logs" > aws-plan.json
+
+# GCP Cloud Storage bucket
+clanker ask --maker --gcp "Create a Cloud Storage bucket for logs" > gcp-plan.json
+
+# Azure Storage account
+clanker ask --maker --azure "Create a Storage account for logs" > azure-plan.json
+
+# Cloudflare R2 bucket
+clanker ask --maker --cloudflare "Create an R2 bucket for logs" > cf-plan.json
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Natural language" href="/concepts/natural-language" icon="comments">
+    Learn how Clanker interprets your questions
+  </Card>
+  <Card title="Maker mode" href="/concepts/maker-mode" icon="wand-magic-sparkles">
+    Generate infrastructure plans from natural language
+  </Card>
+</CardGroup>

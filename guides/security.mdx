@@ -1,0 +1,668 @@
+---
+title: Security
+description: Best practices for securing your cloud infrastructure with Clanker CLI
+---
+
+This guide covers security best practices when using Clanker and how to build secure infrastructure.
+
+## Securing Clanker itself
+
+### API key management
+
+**Never commit API keys to version control:**
+
+```bash
+# ✅ Good: Use environment variables
+export GEMINI_API_KEY="your-key"
+export OPENAI_API_KEY="your-key"
+
+# Add to ~/.bashrc or ~/.zshrc
+echo 'export GEMINI_API_KEY="your-key"' >> ~/.bashrc
+```
+
+**Store keys securely in config:**
+
+```yaml
+# ~/.clanker.yaml
+ai:
+  providers:
+    gemini-api:
+      api_key_env: GEMINI_API_KEY  # ✅ Reference env var
+      # api_key: "hardcoded-key"   # ❌ Never do this
+```
+
+**Rotate keys regularly:**
+
+```bash
+# Generate new API key from provider
+# Update environment variable
+export GEMINI_API_KEY="new-key"
+
+# Verify it works
+clanker ask "test" --debug
+```
+
+### AWS credentials
+
+**Use IAM roles instead of access keys when possible:**
+
+```bash
+# ✅ On EC2: Use instance profile
+aws sts get-caller-identity
+# No credentials needed - uses instance role
+
+# ✅ Locally: Use AWS SSO
+aws configure sso
+aws sso login --profile my-profile
+```
+
+**Principle of least privilege for Clanker:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "rds:Describe*",
+        "lambda:Get*",
+        "lambda:List*",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "cloudwatch:GetMetricStatistics",
+        "logs:DescribeLogGroups",
+        "logs:FilterLogEvents",
+        "ce:GetCostAndUsage",
+        "ce:GetCostForecast"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+<Note>
+This policy allows Clanker to query infrastructure but not make changes. For maker mode, additional permissions are required.
+</Note>
+
+**For maker mode (infrastructure changes):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*",
+        "rds:*",
+        "lambda:*",
+        "s3:*",
+        "iam:CreateRole",
+        "iam:AttachRolePolicy",
+        "iam:PassRole"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": ["us-east-1"]
+        }
+      }
+    }
+  ]
+}
+```
+
+<Warning>
+Only use broad permissions like `ec2:*` when you trust the AI provider and have reviewed generated plans. For production, restrict to specific actions.
+</Warning>
+
+### Multi-factor authentication
+
+**Enable MFA for AWS accounts:**
+
+```bash
+# Check if MFA is enabled
+aws iam get-user
+
+# Enable virtual MFA
+aws iam enable-mfa-device \
+  --user-name your-user \
+  --serial-number arn:aws:iam::ACCOUNT:mfa/your-user \
+  --authentication-code1 123456 \
+  --authentication-code2 789012
+```
+
+**Require MFA for sensitive operations:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "ec2:TerminateInstances",
+        "rds:DeleteDBInstance",
+        "s3:DeleteBucket"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Building secure infrastructure
+
+### Network security
+
+**Create isolated VPCs:**
+
+```bash
+clanker ask --maker "create a VPC with:
+- CIDR 10.0.0.0/16
+- Public subnets (10.0.1.0/24, 10.0.2.0/24) in 2 AZs
+- Private subnets (10.0.10.0/24, 10.0.11.0/24) in 2 AZs
+- NAT Gateway in each public subnet
+- Internet Gateway for public subnets"
+```
+
+**Use security groups with minimal access:**
+
+```bash
+# ✅ Good: Specific sources
+clanker ask --maker "create a security group for web servers that:
+- Allows HTTPS (443) from ALB security group only
+- Allows HTTP (80) from ALB security group only
+- Allows SSH (22) from 203.0.113.0/24 (office IP) only"
+
+# ❌ Bad: Open to world
+clanker ask --maker "create security group allowing all traffic from 0.0.0.0/0"
+```
+
+**Audit existing security groups:**
+
+```bash
+# Find overly permissive rules
+clanker ask "Show me security groups with 0.0.0.0/0 access"
+clanker ask "Find security groups allowing SSH from the internet"
+
+# Fix them
+clanker ask --maker "restrict ssh-access-sg to only allow SSH from 203.0.113.0/24"
+```
+
+### IAM best practices
+
+**Create service-specific roles:**
+
+```bash
+# Lambda function role
+clanker ask --maker "create an IAM role for Lambda function that:
+- Has AWSLambdaBasicExecutionRole for CloudWatch Logs
+- Can read from S3 bucket my-app-data
+- Can write to DynamoDB table my-app-table
+- Nothing else"
+
+# EC2 instance role
+clanker ask --maker "create an IAM role for EC2 that:
+- Can read secrets from Secrets Manager with prefix /prod/app/
+- Can read from S3 bucket prod-config
+- Can write to CloudWatch Logs"
+```
+
+**Avoid wildcard permissions:**
+
+```bash
+# ❌ Bad: Overly broad
+{
+  "Effect": "Allow",
+  "Action": "s3:*",
+  "Resource": "*"
+}
+
+# ✅ Good: Specific actions and resources
+{
+  "Effect": "Allow",
+  "Action": [
+    "s3:GetObject",
+    "s3:ListBucket"
+  ],
+  "Resource": [
+    "arn:aws:s3:::my-app-bucket",
+    "arn:aws:s3:::my-app-bucket/*"
+  ]
+}
+```
+
+### Data encryption
+
+**Encrypt data at rest:**
+
+```bash
+# S3 buckets
+clanker ask --maker "create S3 bucket with:
+- Default encryption enabled (SSE-S3)
+- Versioning enabled
+- Block all public access"
+
+# RDS databases
+clanker ask --maker "create RDS PostgreSQL instance with:
+- Storage encryption enabled
+- Automated backups with 7-day retention
+- Not publicly accessible
+- In private subnet"
+
+# EBS volumes
+clanker ask --maker "create EC2 instance with encrypted EBS volumes"
+```
+
+**Encrypt data in transit:**
+
+```bash
+# ALB with HTTPS
+clanker ask --maker "create Application Load Balancer with:
+- HTTPS listener using ACM certificate
+- HTTP listener redirects to HTTPS
+- Security policy: ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+# RDS with SSL
+clanker ask --maker "configure RDS instance to require SSL connections"
+```
+
+### Secrets management
+
+**Use AWS Secrets Manager:**
+
+```bash
+# Store database credentials
+clanker ask --maker "create a secret in Secrets Manager for:
+- Database username: admin
+- Database password: (generate random)
+- Database host: mydb.abc123.us-east-1.rds.amazonaws.com
+- Name: /prod/database/credentials"
+
+# Lambda uses secret
+clanker ask --maker "grant Lambda function my-app permission to read secret /prod/database/credentials"
+```
+
+**Never hardcode secrets:**
+
+```python
+# ❌ Bad: Hardcoded
+db_password = "mypassword123"
+
+# ✅ Good: From Secrets Manager
+import boto3
+import json
+
+def get_secret():
+    client = boto3.client('secretsmanager')
+    response = client.get_secret_value(SecretId='/prod/database/credentials')
+    return json.loads(response['SecretString'])
+
+secret = get_secret()
+db_password = secret['password']
+```
+
+**Rotate secrets regularly:**
+
+```bash
+# Enable automatic rotation
+clanker ask --maker "enable automatic rotation for secret /prod/database/credentials every 30 days"
+
+# Manual rotation
+clanker ask --maker "rotate the password for secret /prod/database/credentials"
+```
+
+## Kubernetes security
+
+### Pod security
+
+**Use Pod Security Standards:**
+
+```yaml
+# Restricted pod security
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+```
+
+**Don't run as root:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: my-app
+        image: my-app:v1
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+```
+
+**Use network policies:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-network-policy
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: web
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: database
+    ports:
+    - protocol: TCP
+      port: 5432
+```
+
+### Secrets in Kubernetes
+
+**Use Kubernetes Secrets (not ConfigMaps):**
+
+```bash
+# ❌ Bad: ConfigMap for sensitive data
+kubectl create configmap db-creds --from-literal=password=secret123
+
+# ✅ Good: Secret
+kubectl create secret generic db-creds --from-literal=password=secret123
+```
+
+**Encrypt secrets at rest:**
+
+```yaml
+# Enable encryption in EKS
+apiVersion: v1
+kind: EncryptionConfiguration
+resources:
+  - resources:
+    - secrets
+    providers:
+    - kms:
+        name: arn:aws:kms:us-east-1:ACCOUNT:key/KEY_ID
+        cachesize: 1000
+    - identity: {}
+```
+
+**Use external secrets (AWS Secrets Manager):**
+
+```bash
+# Install External Secrets Operator
+helm install external-secrets \
+  external-secrets/external-secrets \
+  -n external-secrets-system \
+  --create-namespace
+
+# Create SecretStore
+kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: aws-secrets-manager
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets
+EOF
+
+# Create ExternalSecret
+kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: database-credentials
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: SecretStore
+  target:
+    name: db-creds
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: /prod/database/credentials
+      property: password
+EOF
+```
+
+## Logging and monitoring
+
+### Enable CloudTrail
+
+```bash
+# Enable CloudTrail in all regions
+clanker ask --maker "enable CloudTrail with:
+- Multi-region trail
+- S3 bucket for logs with encryption
+- CloudWatch Logs integration
+- Log file validation enabled"
+
+# Query recent API calls
+clanker ask "Show me CloudTrail events for IAM changes in the last 24 hours"
+```
+
+### CloudWatch Logs
+
+```bash
+# Enable VPC Flow Logs
+clanker ask --maker "enable VPC flow logs for all VPCs"
+
+# Lambda function logs
+clanker ask --maker "configure Lambda function to log to CloudWatch with 7-day retention"
+
+# Query logs
+clanker ask "Find ERROR in CloudWatch Logs from the last hour"
+```
+
+### Security monitoring
+
+**Enable GuardDuty:**
+
+```bash
+clanker ask --maker "enable GuardDuty for threat detection"
+
+# Check findings
+clanker ask "Show me GuardDuty findings with high severity"
+```
+
+**Enable Security Hub:**
+
+```bash
+clanker ask --maker "enable Security Hub with:
+- AWS Foundational Security Best Practices standard
+- CIS AWS Foundations Benchmark
+- PCI DSS standard"
+
+# Check compliance
+clanker ask "Show me Security Hub findings"
+```
+
+## Compliance
+
+### AWS Config
+
+```bash
+# Enable Config
+clanker ask --maker "enable AWS Config to track all resource changes"
+
+# Check compliance rules
+clanker ask "Show me AWS Config compliance status"
+```
+
+### Generate compliance reports
+
+```bash
+# Full compliance scan
+clanker ask --compliance "Generate comprehensive compliance report"
+
+# Outputs System Security Plan (SSP) format
+# Includes:
+# - All services and resources
+# - Ports and protocols
+# - Security controls
+# - Risk assessments
+```
+
+## Incident response
+
+### Investigate suspicious activity
+
+```bash
+# Recent API calls
+clanker ask "Show me CloudTrail events from unknown IP addresses"
+
+# Failed authentication
+clanker ask "Find failed authentication attempts in the last 24 hours"
+
+# Resource changes
+clanker ask "Show me resources created in the last hour"
+
+# Security group changes
+clanker ask "Find security group modifications in the last 24 hours"
+```
+
+### Respond to incidents
+
+```bash
+# Isolate compromised instance
+clanker ask --maker "remove all security group rules from i-compromised except SSH from 203.0.113.5"
+
+# Rotate credentials
+clanker ask --maker --destroyer "delete all access keys for user-compromised"
+clanker ask --maker "rotate all secrets in Secrets Manager with prefix /prod/"
+
+# Snapshot for forensics
+clanker ask --maker "create snapshot of compromised instance for investigation"
+```
+
+## Security checklist
+
+<AccordionGroup>
+  <Accordion title="Network security">
+    - [ ] Use VPCs with private subnets for sensitive resources
+    - [ ] Security groups follow least privilege (no 0.0.0.0/0 on sensitive ports)
+    - [ ] Enable VPC Flow Logs
+    - [ ] Use NAT Gateways for outbound traffic from private subnets
+    - [ ] ALBs use HTTPS with modern TLS policies
+  </Accordion>
+  
+  <Accordion title="Identity and access">
+    - [ ] All users have MFA enabled
+    - [ ] No IAM users with Administrator access
+    - [ ] Service roles use least privilege
+    - [ ] Access keys rotated every 90 days
+    - [ ] No hardcoded credentials in code or config
+  </Accordion>
+  
+  <Accordion title="Data protection">
+    - [ ] S3 buckets use default encryption
+    - [ ] S3 buckets have Block Public Access enabled
+    - [ ] RDS instances encrypted at rest
+    - [ ] EBS volumes encrypted
+    - [ ] Secrets stored in Secrets Manager or Parameter Store
+  </Accordion>
+  
+  <Accordion title="Logging and monitoring">
+    - [ ] CloudTrail enabled in all regions
+    - [ ] CloudWatch Logs for all services
+    - [ ] GuardDuty enabled for threat detection
+    - [ ] AWS Config enabled for compliance
+    - [ ] Security Hub enabled for centralized findings
+  </Accordion>
+  
+  <Accordion title="Kubernetes (if applicable)">
+    - [ ] EKS cluster endpoint not public
+    - [ ] Pod Security Standards enforced
+    - [ ] Network policies defined
+    - [ ] Secrets encrypted at rest
+    - [ ] RBAC properly configured
+  </Accordion>
+</AccordionGroup>
+
+## Best practices summary
+
+<CardGroup cols={2}>
+  <Card title="Least privilege always" icon="key">
+    Grant only the minimum permissions required. Review and remove unused permissions regularly.
+  </Card>
+  
+  <Card title="Encrypt everything" icon="lock">
+    Enable encryption at rest and in transit for all data stores and communications.
+  </Card>
+  
+  <Card title="Monitor continuously" icon="eye">
+    Enable CloudTrail, GuardDuty, and Security Hub. Review findings regularly.
+  </Card>
+  
+  <Card title="Automate security" icon="robot">
+    Use Clanker to automate security audits and compliance checks.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Security audit" href="/guides/security-audit" icon="shield-check">
+    Run comprehensive security audits
+  </Card>
+  
+  <Card title="Multi-environment" href="/guides/multi-environment" icon="network-wired">
+    Isolate environments for security
+  </Card>
+  
+  <Card title="Creating infrastructure" href="/guides/creating-infrastructure" icon="cloud">
+    Generate secure infrastructure automatically
+  </Card>
+  
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Monitor for security events
+  </Card>
+</CardGroup>

@@ -1,0 +1,311 @@
+---
+title: clanker config
+description: Manage Clanker configuration and settings
+---
+
+The `config` command manages Clanker's configuration file, AI provider settings, and cloud credentials.
+
+## Usage
+
+```bash
+clanker config [subcommand] [flags]
+```
+
+## Subcommands
+
+### init
+
+Create a default configuration file:
+
+```bash
+clanker config init
+```
+
+This creates `~/.clanker.yaml` with default settings for:
+- AI providers (OpenAI, Anthropic, Gemini, DeepSeek, MiniMax, Bedrock)
+- Infrastructure providers (AWS, GCP, Azure)
+- GitHub repositories
+- PostgreSQL connections
+- Terraform workspaces
+- Codebase analysis settings
+
+### show
+
+Display current configuration:
+
+```bash
+clanker config show
+```
+
+Outputs the contents of `~/.clanker.yaml`.
+
+### scan
+
+Scan your system for available cloud credentials and API keys:
+
+```bash
+clanker config scan
+```
+
+<CodeGroup>
+```bash Human-readable output
+clanker config scan
+```
+
+```bash JSON output
+clanker config scan --output json
+```
+
+```bash Custom AWS paths
+clanker config scan \
+  --aws-paths ~/.custom/aws-creds,~/.another/credentials
+```
+
+```bash Custom GCP paths
+clanker config scan \
+  --gcp-paths ~/.config/gcloud/custom-creds.json
+```
+
+```bash Custom env vars
+clanker config scan \
+  --llm-env MY_OPENAI_KEY,MY_ANTHROPIC_KEY
+```
+</CodeGroup>
+
+## Scan flags
+
+<ParamField path="--output" type="string" default="">
+  Output format (`json` for JSON output, empty for human-readable)
+</ParamField>
+
+<ParamField path="--aws-paths" type="string[]">
+  Custom AWS credential file paths to scan (comma-separated)
+</ParamField>
+
+<ParamField path="--gcp-paths" type="string[]">
+  Custom GCP credential file paths to scan (comma-separated)
+</ParamField>
+
+<ParamField path="--cloudflare-env" type="string[]">
+  Custom Cloudflare environment variable keys to check (comma-separated)
+</ParamField>
+
+<ParamField path="--llm-env" type="string[]">
+  Custom LLM API key environment variables to check (comma-separated)
+</ParamField>
+
+## Scan detection
+
+The `scan` command detects:
+
+### AWS credentials
+- Profiles from `~/.aws/credentials`
+- Profiles from `~/.aws/config`
+- Custom credential file paths
+- Associated regions
+
+### GCP credentials
+- Application Default Credentials
+- Custom service account JSON files
+- `gcloud` CLI availability
+- Configured projects
+
+### Azure credentials
+- `az` CLI availability
+- Active subscriptions
+- Default subscription
+
+### Cloudflare credentials
+- `CLOUDFLARE_API_TOKEN` environment variable
+- `CLOUDFLARE_ACCOUNT_ID` environment variable
+- Custom environment variables
+
+### LLM API keys
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `GEMINI_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `MINIMAX_API_KEY`
+- Custom environment variables
+
+## Configuration file structure
+
+The `~/.clanker.yaml` file uses this structure:
+
+```yaml
+# AI Providers
+ai:
+  default_provider: openai
+  providers:
+    openai:
+      model: gpt-5
+      api_key_env: OPENAI_API_KEY
+    anthropic:
+      model: claude-opus-4-6
+      api_key_env: ANTHROPIC_API_KEY
+    gemini:
+      project_id: your-gcp-project-id
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+    deepseek:
+      model: deepseek-chat
+      api_key_env: DEEPSEEK_API_KEY
+    minimax:
+      model: MiniMax-M2.5
+      api_key_env: MINIMAX_API_KEY
+    bedrock:
+      aws_profile: your-aws-profile
+      model: anthropic.claude-opus-4-6-v1
+      region: us-west-1
+
+# Infrastructure Providers
+infra:
+  default_environment: dev
+  default_provider: aws
+  
+  aws:
+    environments:
+      dev:
+        profile: your-dev-profile
+        region: us-east-1
+        description: Development environment
+      stage:
+        profile: your-stage-profile
+        region: us-east-1
+        description: Staging environment
+      prod:
+        profile: your-prod-profile
+        region: us-east-1
+        description: Production environment
+
+  gcp:
+    project_id: your-gcp-project-id
+
+# GitHub
+github:
+  token: ""
+  default_repo: your-repo
+  repos:
+    - owner: your-username
+      repo: your-infrastructure-repo
+      description: Infrastructure repository
+
+# PostgreSQL
+postgres:
+  default_connection: dev
+  connections:
+    dev:
+      host: localhost
+      port: 5432
+      database: your_dev_db
+      username: postgres
+      description: Development database
+
+# Terraform
+terraform:
+  default_workspace: dev
+  workspaces:
+    dev:
+      path: /path/to/your/infrastructure
+      description: Development infrastructure
+
+# Codebase
+codebase:
+  paths:
+    - .
+    - /path/to/your/services
+  exclude:
+    - node_modules
+    - .git
+    - vendor
+  max_file_size: 1048576
+  max_files: 100
+```
+
+## Example output
+
+### Scan output (human-readable)
+
+```
+=== System Credentials Scan ===
+
+AWS Profiles:
+  - default [us-east-1] (credentials)
+  - dev [us-west-2] (config)
+  - prod [us-east-1] (config)
+
+GCP:
+  Application Default Credentials: Found at ~/.config/gcloud/application_default_credentials.json
+  gcloud CLI: true
+  Projects: my-project-dev, my-project-prod
+
+Azure:
+  az CLI: true
+  Subscriptions:
+    - My Dev Subscription (abc-123-def) (default)
+    - My Prod Subscription (xyz-789-ghi)
+
+Cloudflare:
+  API Token (env): true
+  Account ID (env): true
+
+LLM API Keys (from environment):
+  OpenAI: true
+  Anthropic: true
+  Gemini: false
+```
+
+### Scan output (JSON)
+
+```json
+{
+  "aws": {
+    "profiles": [
+      {
+        "name": "default",
+        "region": "us-east-1",
+        "source": "credentials"
+      },
+      {
+        "name": "dev",
+        "region": "us-west-2",
+        "source": "config"
+      }
+    ]
+  },
+  "gcp": {
+    "hasADC": true,
+    "adcPath": "~/.config/gcloud/application_default_credentials.json",
+    "projects": ["my-project-dev", "my-project-prod"],
+    "cliAvailable": true
+  },
+  "azure": {
+    "cliAvailable": true,
+    "subscriptions": [
+      {
+        "id": "abc-123-def",
+        "name": "My Dev Subscription",
+        "state": "Enabled",
+        "isDefault": true
+      }
+    ]
+  },
+  "cloudflare": {
+    "hasToken": true,
+    "hasAccountId": true
+  },
+  "llm": {
+    "openai": {"hasKey": true},
+    "anthropic": {"hasKey": true},
+    "gemini": {"hasKey": false},
+    "deepseek": {"hasKey": false},
+    "minimax": {"hasKey": false}
+  }
+}
+```
+
+## See also
+
+- [Credentials command](/commands/credentials) - Store credentials in backend
+- [Ask command](/commands/ask) - Use configured credentials for queries

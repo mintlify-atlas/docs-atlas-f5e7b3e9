@@ -1,0 +1,192 @@
+---
+title: Installation
+description: Install Clanker CLI via Homebrew or from source
+---
+
+Clanker can be installed via Homebrew (recommended) or built from source. Follow the instructions below for your preferred method.
+
+## Homebrew (recommended)
+
+The easiest way to install Clanker is through Homebrew:
+
+<Steps>
+  <Step title="Add the Clanker tap">
+    ```bash
+    brew tap clankercloud/tap
+    ```
+  </Step>
+  
+  <Step title="Install Clanker">
+    ```bash
+    brew install clanker
+    ```
+  </Step>
+  
+  <Step title="Verify installation">
+    ```bash
+    clanker --help
+    ```
+    
+    You should see the Clanker help output with available commands.
+  </Step>
+</Steps>
+
+## Install from source
+
+If you prefer to build from source or want to contribute to development:
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/bgdnvk/clanker.git
+    cd clanker
+    ```
+  </Step>
+  
+  <Step title="Install using Make">
+    ```bash
+    make install
+    ```
+    
+    This will build the binary and install it to your system.
+  </Step>
+  
+  <Step title="Verify installation">
+    ```bash
+    clanker --help
+    ```
+  </Step>
+</Steps>
+
+## Requirements
+
+### Go (for source installation)
+
+If installing from source, you need Go installed on your system:
+
+```bash
+brew install go
+```
+
+### AWS CLI v2
+
+For AWS functionality, install the AWS CLI v2 (recommended over v1):
+
+```bash
+brew install awscli
+```
+
+<Warning>
+AWS CLI v1 breaks the `--no-cli-pager` flag. Use AWS CLI v2 for the best experience.
+</Warning>
+
+### kubectl (for Kubernetes)
+
+For Kubernetes features, install kubectl:
+
+```bash
+brew install kubectl
+```
+
+### Other cloud CLIs (optional)
+
+Depending on which cloud providers you use:
+
+<CodeGroup>
+```bash Google Cloud
+# Install gcloud CLI
+brew install google-cloud-sdk
+```
+
+```bash Azure
+# Install Azure CLI
+brew install azure-cli
+```
+
+```bash Terraform
+# Install Terraform
+brew install terraform
+```
+</CodeGroup>
+
+## Verify your installation
+
+After installation, verify that Clanker is working correctly:
+
+<Steps>
+  <Step title="Check version">
+    ```bash
+    clanker --help
+    ```
+    
+    This should display the help menu with all available commands.
+  </Step>
+  
+  <Step title="Test basic functionality">
+    If you have an OpenAI API key, try a simple query:
+    
+    ```bash
+    export OPENAI_API_KEY="your-key-here"
+    clanker ask "hello, are you working?"
+    ```
+  </Step>
+</Steps>
+
+## Update Clanker
+
+### Homebrew
+
+To update Clanker when installed via Homebrew:
+
+```bash
+brew update
+brew upgrade clanker
+```
+
+### From source
+
+To update when installed from source:
+
+```bash
+cd clanker
+git pull
+make install
+```
+
+## Uninstall
+
+### Homebrew
+
+```bash
+brew uninstall clanker
+brew untap clankercloud/tap
+```
+
+### From source
+
+Remove the binary from your system (location depends on your `make install` configuration):
+
+```bash
+which clanker  # Find the binary location
+rm $(which clanker)  # Remove it
+```
+
+## Platform support
+
+<Note>
+Clanker has only been tested on macOS. Linux and Windows support may work but are not officially tested.
+</Note>
+
+If you encounter issues on other platforms, please [open an issue on GitHub](https://github.com/bgdnvk/clanker/issues).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Set up your AI providers and cloud credentials
+  </Card>
+  
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Run your first query and explore Clanker's features
+  </Card>
+</CardGroup>

@@ -1,0 +1,368 @@
+---
+title: Deployments
+description: Deploy and manage applications on Kubernetes clusters
+---
+
+Deploy containerized applications to your Kubernetes clusters with Clanker's simplified deployment workflow.
+
+## Quick deployment
+
+Deploy a container image with automatic service creation:
+
+```bash
+# Deploy nginx with default settings
+clanker k8s deploy nginx
+
+# Deploy with custom name and port
+clanker k8s deploy nginx --name my-app --port 80 --replicas 3
+
+# Deploy to specific namespace
+clanker k8s deploy myapp:v1.0 --namespace production --replicas 5
+```
+
+<Info>
+Clanker automatically creates both a Deployment and a LoadBalancer Service for the application.
+</Info>
+
+## Deployment options
+
+### Basic configuration
+
+<ParamField path="image" type="string" required>
+  Container image to deploy (e.g., nginx, myapp:v1.0)
+</ParamField>
+
+<ParamField path="--name" type="string">
+  Deployment name (defaults to image name without tag)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="80">
+  Container port to expose
+</ParamField>
+
+<ParamField path="--replicas" type="integer" default="1">
+  Number of pod replicas
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="default">
+  Kubernetes namespace for deployment
+</ParamField>
+
+### Preview and apply
+
+<ParamField path="--plan" type="boolean">
+  Show deployment plan without applying changes
+</ParamField>
+
+<ParamField path="--apply" type="boolean">
+  Apply deployment without confirmation prompt
+</ParamField>
+
+## Deployment plan
+
+View what will be created before deploying:
+
+```bash
+clanker k8s deploy nginx --name web --replicas 3 --plan
+```
+
+**Example output:**
+
+```
+=== Deployment Plan ===
+
+Operation: Deploy application
+Name:      web
+Image:     nginx
+Replicas:  3
+Namespace: default
+
+Resources to be created:
+  ✓ Deployment: web
+  ✓ Service: web (LoadBalancer)
+
+Steps:
+  1. Create Deployment manifest
+  2. Create Service manifest  
+  3. Apply manifests to cluster
+  4. Wait for pods to be ready
+
+Connection:
+  kubectl get pods -n default -l app=web
+  kubectl get service web -n default
+```
+
+## Generated manifests
+
+Clanker generates standard Kubernetes manifests for deployments:
+
+<CodeGroup>
+```yaml Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+```
+
+```yaml Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+  type: LoadBalancer
+```
+</CodeGroup>
+
+## Deployment workflow
+
+<Steps>
+  <Step title="Generate plan">
+    Clanker analyzes the deployment parameters and generates an execution plan showing what resources will be created.
+  </Step>
+  
+  <Step title="Confirm changes">
+    Review the plan and confirm (or use `--apply` to skip confirmation).
+  </Step>
+  
+  <Step title="Apply manifests">
+    Clanker applies the Deployment and Service manifests to the cluster using `kubectl apply`.
+  </Step>
+  
+  <Step title="Verify deployment">
+    Monitor pod creation and readiness:
+    
+    ```bash
+    kubectl get pods -l app=nginx
+    kubectl get service nginx
+    ```
+  </Step>
+</Steps>
+
+## Managing deployments
+
+After deployment, use standard kubectl commands:
+
+```bash
+# View pods
+kubectl get pods -l app=nginx
+
+# View service and get LoadBalancer IP
+kubectl get service nginx
+
+# Scale deployment
+kubectl scale deployment nginx --replicas=5
+
+# Update image
+kubectl set image deployment/nginx nginx=nginx:1.21
+
+# View logs
+kubectl logs -l app=nginx
+
+# Delete deployment
+kubectl delete deployment nginx
+kubectl delete service nginx
+```
+
+## Advanced deployment scenarios
+
+### Deploy to multiple namespaces
+
+Deploy the same application to different environments:
+
+```bash
+# Development
+clanker k8s deploy myapp:dev --namespace development --replicas 1
+
+# Staging
+clanker k8s deploy myapp:staging --namespace staging --replicas 2
+
+# Production
+clanker k8s deploy myapp:v1.0 --namespace production --replicas 5
+```
+
+### Custom port mappings
+
+Deploy applications with non-standard ports:
+
+```bash
+# Node.js app on port 3000
+clanker k8s deploy myapp:latest --port 3000
+
+# Go API on port 8080
+clanker k8s deploy api-server:v2.0 --port 8080 --replicas 3
+```
+
+### High availability deployments
+
+Deploy with multiple replicas for redundancy:
+
+```bash
+clanker k8s deploy critical-app:v1.0 \
+  --replicas 5 \
+  --namespace production
+```
+
+<Tip>
+Kubernetes will distribute replicas across nodes for high availability.
+</Tip>
+
+## Implementation details
+
+The deployment process is implemented in `cmd/k8s.go:939`:
+
+```go cmd/k8s.go:939
+func runDeploy(cmd *cobra.Command, args []string) error {
+	image := args[0]
+	ctx := context.Background()
+
+	deployName := k8sDeployName
+	if deployName == "" {
+		// Extract name from image
+		parts := strings.Split(image, "/")
+		deployName = parts[len(parts)-1]
+		if idx := strings.Index(deployName, ":"); idx > 0 {
+			deployName = deployName[:idx]
+		}
+	}
+
+	// Generate deploy plan
+	deployPlan := plan.GenerateDeployPlan(plan.DeployOptions{
+		Name:      deployName,
+		Image:     image,
+		Port:      k8sDeployPort,
+		Replicas:  k8sReplicas,
+		Namespace: k8sNamespace,
+		Type:      "deployment",
+	})
+
+	// Build deployment manifest
+	manifest := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  replicas: %d
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      containers:
+      - name: %s
+        image: %s
+        ports:
+        - containerPort: %d
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  selector:
+    app: %s
+  ports:
+  - port: %d
+    targetPort: %d
+  type: LoadBalancer
+`, deployName, k8sNamespace, k8sReplicas, deployName, 
+   deployName, deployName, image, k8sDeployPort, 
+   deployName, k8sNamespace, deployName, 
+   k8sDeployPort, k8sDeployPort)
+
+	// Apply using kubectl
+	client := k8s.NewClient("", "", viper.GetBool("debug"))
+	output, err := client.Apply(ctx, manifest, k8sNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to deploy: %w", err)
+	}
+
+	fmt.Println(output)
+	return nil
+}
+```
+
+## Troubleshooting
+
+### Pods not starting
+
+Check pod status and events:
+
+```bash
+# View pod status
+kubectl get pods -l app=myapp
+
+# Describe pod for events
+kubectl describe pod <pod-name>
+
+# Check logs
+kubectl logs <pod-name>
+```
+
+### Service not accessible
+
+Verify service configuration:
+
+```bash
+# Get service details
+kubectl get service myapp -o wide
+
+# Check endpoints
+kubectl get endpoints myapp
+
+# Verify pods are ready
+kubectl get pods -l app=myapp
+```
+
+### Image pull errors
+
+Ensure the image exists and is accessible:
+
+```bash
+# Use fully qualified image name
+clanker k8s deploy docker.io/library/nginx:latest
+
+# For private registries, create image pull secret
+kubectl create secret docker-registry regcred \
+  --docker-server=<registry> \
+  --docker-username=<user> \
+  --docker-password=<password>
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Ask mode" icon="comments" href="/kubernetes/ask-mode">
+    Query your deployments with natural language
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/kubernetes/monitoring">
+    Monitor deployment health and metrics
+  </Card>
+</CardGroup>

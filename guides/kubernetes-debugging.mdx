@@ -1,0 +1,649 @@
+---
+title: Kubernetes debugging
+description: Troubleshoot Kubernetes pods, services, networking, and workload issues
+---
+
+This guide covers debugging common Kubernetes problems using Clanker's natural language interface and kubectl integration.
+
+## Pod debugging
+
+### Check pod status
+
+```bash
+# All pods
+clanker k8s ask "show me all pods"
+
+# Pods with issues
+clanker k8s ask "show me pods that are not running"
+clanker k8s ask "which pods have been restarted recently?"
+
+# Specific namespace
+clanker k8s ask "show me pods in production namespace"
+```
+
+**Example output:**
+
+```markdown
+# Pods with Issues
+
+## Not Running (3 pods)
+
+### my-app-789abc (production)
+- **Status**: CrashLoopBackOff
+- **Restarts**: 15
+- **Age**: 2h
+- **Last restart**: 3m ago
+- **Exit code**: 1
+
+### redis-worker-xyz (production)
+- **Status**: ImagePullBackOff  
+- **Restarts**: 0
+- **Age**: 45m
+- **Error**: Failed to pull image "redis:latest-typo"
+
+### postgres-replica-1 (database)
+- **Status**: Pending
+- **Restarts**: 0
+- **Age**: 10m
+- **Reason**: Insufficient cpu (node affinity not satisfied)
+
+## Recent Restarts (2 pods)
+
+### api-server-456def (production)
+- **Status**: Running
+- **Restarts**: 3 (last 24h)
+- **Reason**: OOMKilled (memory limit exceeded)
+```
+
+### View pod logs
+
+```bash
+# Recent logs
+clanker k8s logs my-app-789abc
+
+# Follow logs
+clanker k8s logs my-app-789abc -f
+
+# Previous container (after crash)
+clanker k8s logs my-app-789abc -p
+
+# Specific container
+clanker k8s logs my-app-789abc -c sidecar
+
+# All containers
+clanker k8s logs my-app-789abc --all-containers
+
+# With timestamps
+clanker k8s logs my-app-789abc --timestamps --tail 100
+```
+
+### Describe pod
+
+```bash
+# Natural language
+clanker k8s ask "describe pod my-app-789abc"
+clanker k8s ask "why is my-app-789abc crashing?"
+clanker k8s ask "show me events for my-app-789abc"
+```
+
+**Describe output includes:**
+- Container statuses and restart counts
+- Resource requests and limits
+- Volume mounts and secrets
+- Node assignment
+- Events (scheduling, pulling, starting, errors)
+
+## Common pod issues
+
+### CrashLoopBackOff
+
+**Symptom**: Pod repeatedly crashes and restarts
+
+**Diagnosis:**
+
+```bash
+# Check logs
+clanker k8s logs my-app -p  # Previous container
+
+# Check exit code
+clanker k8s ask "what's the exit code for my-app?"
+
+# Check events
+clanker k8s ask "show me recent events for my-app"
+```
+
+**Common causes:**
+
+1. **Application error** (exit code 1)
+2. **Missing configuration** (config files, env vars)
+3. **Failed health checks** (liveness probe)
+4. **OOMKilled** (memory limit exceeded)
+
+**Fix examples:**
+
+```bash
+# Increase memory
+kubectl set resources deployment my-app --limits=memory=512Mi
+
+# Update environment variable
+kubectl set env deployment my-app DATABASE_URL=postgres://...
+
+# Disable health check temporarily
+kubectl patch deployment my-app --type='json' -p='[{"op": "remove", "path": "/spec/template/spec/containers/0/livenessProbe"}]'
+```
+
+### ImagePullBackOff
+
+**Symptom**: Cannot pull container image
+
+**Diagnosis:**
+
+```bash
+# Check exact error
+clanker k8s ask "why can't my-app pull its image?"
+
+# Verify image exists
+docker pull myregistry.com/my-app:v1.2.3
+```
+
+**Common causes:**
+
+1. **Image doesn't exist** (typo in tag)
+2. **Registry authentication failed** (missing imagePullSecret)
+3. **Private registry** (need credentials)
+
+**Fix:**
+
+```bash
+# Create registry secret
+kubectl create secret docker-registry regcred \
+  --docker-server=myregistry.com \
+  --docker-username=myuser \
+  --docker-password=mypass
+
+# Add to service account
+kubectl patch serviceaccount default -p '{"imagePullSecrets": [{"name": "regcred"}]}'
+
+# Or update deployment
+kubectl patch deployment my-app -p '{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"regcred"}]}}}}'
+```
+
+### Pending (not scheduled)
+
+**Symptom**: Pod stuck in Pending state
+
+**Diagnosis:**
+
+```bash
+# Check why not scheduled
+clanker k8s ask "why is my-app pending?"
+
+# Check node resources
+clanker k8s stats nodes
+
+# Check events
+clanker k8s ask "show me scheduling events"
+```
+
+**Common causes:**
+
+1. **Insufficient resources** (CPU/memory)
+2. **Node selector** (no matching nodes)
+3. **Taints/tolerations** (node is tainted)
+4. **Affinity rules** (not satisfied)
+
+**Fix:**
+
+```bash
+# Scale nodes (EKS)
+clanker ask --maker "add 2 nodes to my-cluster"
+
+# Remove node selector
+kubectl patch deployment my-app --type='json' -p='[{"op": "remove", "path": "/spec/template/spec/nodeSelector"}]'
+
+# Reduce resource requests
+kubectl set resources deployment my-app --requests=cpu=100m,memory=128Mi
+```
+
+### OOMKilled (out of memory)
+
+**Symptom**: Pod killed due to memory limit
+
+**Diagnosis:**
+
+```bash
+# Check memory usage
+clanker k8s stats pod my-app --containers
+
+# Check memory limit
+clanker k8s ask "what's the memory limit for my-app?"
+
+# Check logs before kill
+clanker k8s logs my-app -p --tail 100
+```
+
+**Fix:**
+
+```bash
+# Increase memory limit
+kubectl set resources deployment my-app --limits=memory=1Gi
+
+# Also increase request
+kubectl set resources deployment my-app --requests=memory=512Mi --limits=memory=1Gi
+```
+
+<Warning>
+Always set both requests and limits. If only limit is set, request defaults to limit, which can cause scheduling issues.
+</Warning>
+
+### Evicted pods
+
+**Symptom**: Pods evicted due to resource pressure
+
+**Diagnosis:**
+
+```bash
+# Check evicted pods
+clanker k8s ask "show me evicted pods"
+
+# Check node pressure
+clanker k8s ask "show me nodes with resource pressure"
+
+# Check disk usage
+clanker k8s stats nodes
+```
+
+**Fix:**
+
+```bash
+# Clean up evicted pods
+kubectl get pods --all-namespaces --field-selector=status.phase=Failed -o json | kubectl delete -f -
+
+# Add nodes
+clanker ask --maker "add 1 node to my-cluster"
+
+# Clean up node disk (SSH to node)
+ssh node
+sudo docker system prune -a -f
+```
+
+## Service and networking
+
+### Service not reachable
+
+**Diagnosis:**
+
+```bash
+# Check service
+clanker k8s ask "describe service my-app"
+
+# Check endpoints
+clanker k8s ask "show me endpoints for my-app service"
+
+# Check if pods match selector
+clanker k8s ask "show me pods matching selector app=my-app"
+```
+
+**Common issues:**
+
+1. **No endpoints**: Selector doesn't match any pods
+2. **Wrong port**: Container port != service target port
+3. **Pod not ready**: Failing readiness probe
+
+**Fix:**
+
+```bash
+# Check selector matches pod labels
+kubectl get svc my-app -o yaml | grep selector -A 5
+kubectl get pods -l app=my-app
+
+# Update service selector
+kubectl patch svc my-app -p '{"spec":{"selector":{"app":"my-app"}}}'
+
+# Check container port
+kubectl get pods my-app-xyz -o jsonpath='{.spec.containers[0].ports[0].containerPort}'
+```
+
+### LoadBalancer stuck in Pending
+
+**Diagnosis:**
+
+```bash
+clanker k8s ask "why is my-app service stuck in pending?"
+
+# Check events
+kubectl describe svc my-app
+```
+
+**Common causes:**
+
+1. **AWS**: Missing IAM permissions for ALB controller
+2. **GKE**: Cloud Load Balancing API not enabled
+3. **On-prem**: No load balancer provider (use NodePort instead)
+
+**Fix for EKS:**
+
+```bash
+# Install AWS Load Balancer Controller
+kubectl apply -k "github.com/aws/eks-charts/stable/aws-load-balancer-controller//crds?ref=master"
+
+helm repo add eks https://aws.github.io/eks-charts
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=my-cluster
+```
+
+### DNS resolution failures
+
+**Diagnosis:**
+
+```bash
+# Test DNS from pod
+kubectl run -it --rm debug --image=busybox --restart=Never -- nslookup my-app.default.svc.cluster.local
+
+# Check CoreDNS
+clanker k8s ask "show me CoreDNS pods status"
+kubectl logs -n kube-system -l k8s-app=kube-dns
+```
+
+**Fix:**
+
+```bash
+# Restart CoreDNS
+kubectl rollout restart deployment coredns -n kube-system
+
+# Check CoreDNS config
+kubectl get configmap coredns -n kube-system -o yaml
+```
+
+## Deployment issues
+
+### Rolling update stuck
+
+**Diagnosis:**
+
+```bash
+# Check rollout status
+kubectl rollout status deployment my-app
+
+# Check replica sets
+clanker k8s ask "show me replica sets for my-app"
+
+# Check events
+clanker k8s ask "show me recent deployment events"
+```
+
+**Fix:**
+
+```bash
+# Rollback to previous version
+kubectl rollout undo deployment my-app
+
+# Pause rollout to debug
+kubectl rollout pause deployment my-app
+
+# Resume after fix
+kubectl rollout resume deployment my-app
+```
+
+### Pods not updating
+
+**Diagnosis:**
+
+```bash
+# Check deployment image
+kubectl get deployment my-app -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+# Check pod image
+kubectl get pods -l app=my-app -o jsonpath='{.items[0].spec.containers[0].image}'
+```
+
+**Cause**: Image pull policy is "IfNotPresent" and tag didn't change (e.g., "latest")
+
+**Fix:**
+
+```bash
+# Force update
+kubectl rollout restart deployment my-app
+
+# Or change imagePullPolicy to Always
+kubectl patch deployment my-app -p '{"spec":{"template":{"spec":{"containers":[{"name":"my-app","imagePullPolicy":"Always"}]}}}}'
+```
+
+## Resource and performance
+
+### High CPU or memory usage
+
+**Diagnosis:**
+
+```bash
+# Check pod metrics
+clanker k8s stats pod my-app --containers
+
+# Compare to limits
+clanker k8s ask "show me resource requests and limits for my-app"
+
+# Check over time
+watch -n 5 'kubectl top pods -l app=my-app'
+```
+
+**Fix:**
+
+```bash
+# Scale horizontally
+kubectl scale deployment my-app --replicas=5
+
+# Or use autoscaling
+kubectl autoscale deployment my-app --min=2 --max=10 --cpu-percent=70
+```
+
+### Node pressure
+
+**Diagnosis:**
+
+```bash
+# Check nodes
+clanker k8s stats nodes
+
+# Check which pods are using resources
+clanker k8s stats pods -A --sort-by memory
+
+# Check node conditions
+clanker k8s ask "show me nodes with resource pressure"
+```
+
+**Fix:**
+
+```bash
+# Add nodes
+clanker ask --maker "add 2 nodes to my-cluster"
+
+# Or evict low-priority pods
+kubectl drain node-1 --ignore-daemonsets --delete-emptydir-data
+```
+
+## Storage issues
+
+### PVC stuck in Pending
+
+**Diagnosis:**
+
+```bash
+# Check PVC status
+clanker k8s ask "show me persistent volume claims"
+
+# Check storage class
+kubectl get storageclass
+
+# Check events
+kubectl describe pvc my-pvc
+```
+
+**Common causes:**
+
+1. **No storage class**: Default storage class not configured
+2. **Insufficient storage**: Requested size > available
+3. **Access mode mismatch**: RWX not supported by provisioner
+
+**Fix:**
+
+```bash
+# Set default storage class
+kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+# Or specify storage class in PVC
+kubectl patch pvc my-pvc -p '{"spec":{"storageClassName":"gp2"}}'
+```
+
+## Advanced debugging
+
+### Exec into pod
+
+```bash
+# Get shell
+kubectl exec -it my-app-789abc -- /bin/bash
+
+# Run command
+kubectl exec my-app-789abc -- env
+kubectl exec my-app-789abc -- ps aux
+kubectl exec my-app-789abc -- curl localhost:8080/health
+```
+
+### Port forward for local testing
+
+```bash
+# Forward pod port to local
+kubectl port-forward my-app-789abc 8080:8080
+
+# Test locally
+curl localhost:8080
+```
+
+### Debug with ephemeral container (K8s 1.23+)
+
+```bash
+# Add debug container with tools
+kubectl debug my-app-789abc -it --image=busybox --target=my-app
+
+# With full OS
+kubectl debug my-app-789abc -it --image=ubuntu --target=my-app
+```
+
+### Network debugging
+
+```bash
+# Test connectivity from debug pod
+kubectl run tmp-shell --rm -i --tty --image nicolaka/netshoot
+
+# Inside debug pod:
+# curl my-app.default.svc.cluster.local:8080
+# nslookup my-app.default.svc.cluster.local
+# traceroute my-app.default.svc.cluster.local
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Check logs first" icon="file-lines">
+    Always start with pod logs. Use `-p` for previous container after crashes.
+  </Card>
+  
+  <Card title="Set resource limits" icon="gauge">
+    Always set both requests and limits to prevent OOMKilled and scheduling issues.
+  </Card>
+  
+  <Card title="Use health checks" icon="heart-pulse">
+    Configure readiness and liveness probes. But disable temporarily when debugging.
+  </Card>
+  
+  <Card title="Monitor events" icon="bell">
+    Check cluster events regularly. They reveal scheduling, pulling, and runtime issues.
+  </Card>
+</CardGroup>
+
+## Debugging workflow
+
+<Steps>
+
+<Step title="Identify the problem">
+
+```bash
+clanker k8s ask "show me pods with issues"
+```
+
+</Step>
+
+<Step title="Check pod status and logs">
+
+```bash
+clanker k8s ask "describe pod my-app-789abc"
+clanker k8s logs my-app-789abc -p --tail 100
+```
+
+</Step>
+
+<Step title="Check resources and events">
+
+```bash
+clanker k8s stats pod my-app-789abc --containers
+clanker k8s ask "show me recent events for my-app"
+```
+
+</Step>
+
+<Step title="Apply fix">
+
+```bash
+# Example: increase memory
+kubectl set resources deployment my-app --limits=memory=1Gi
+
+# Watch rollout
+kubectl rollout status deployment my-app
+```
+
+</Step>
+
+<Step title="Verify fix">
+
+```bash
+# Check new pod
+clanker k8s ask "show me pods for my-app"
+clanker k8s logs my-app-newpod -f
+```
+
+</Step>
+
+</Steps>
+
+## Troubleshooting cheat sheet
+
+| Symptom | Command |
+|---------|----------|
+| Pod crashing | `clanker k8s logs my-pod -p` |
+| Can't pull image | `clanker k8s ask "why can't my-pod pull its image?"` |
+| Pod pending | `clanker k8s ask "why is my-pod pending?"` |
+| OOMKilled | `clanker k8s stats pod my-pod --containers` |
+| Service not working | `clanker k8s ask "show me endpoints for my-service"` |
+| DNS not working | `kubectl run -it --rm debug --image=busybox -- nslookup my-service` |
+| High CPU | `clanker k8s stats pods -A --sort-by cpu` |
+| Node pressure | `clanker k8s stats nodes` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Set up comprehensive K8s monitoring
+  </Card>
+  
+  <Card title="Kubernetes setup" href="/guides/kubernetes-setup" icon="dharmachakra">
+    Create and configure clusters properly
+  </Card>
+  
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Right-size pods and nodes for cost
+  </Card>
+  
+  <Card title="Security best practices" href="/guides/security" icon="shield">
+    Secure your Kubernetes workloads
+  </Card>
+</CardGroup>

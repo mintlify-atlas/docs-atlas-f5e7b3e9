@@ -1,0 +1,574 @@
+---
+title: Multi-environment setup
+description: Manage development, staging, and production environments with Clanker CLI
+---
+
+This guide shows you how to configure and manage multiple cloud environments (dev, staging, production) using Clanker's profile system.
+
+## Why multiple environments?
+
+Separating environments provides:
+
+- **Isolation**: Changes in dev don't affect production
+- **Testing**: Validate changes in staging before production
+- **Cost control**: Different resource sizes per environment
+- **Security**: Stricter controls in production
+- **Compliance**: Audit trails per environment
+
+## Configuration
+
+### AWS multi-environment setup
+
+**Configure multiple AWS profiles in `~/.clanker.yaml`:**
+
+```yaml
+infra:
+  default_provider: aws
+  default_environment: dev  # Used when no --profile specified
+  
+  aws:
+    environments:
+      dev:
+        profile: my-company-dev
+        region: us-east-1
+      
+      staging:
+        profile: my-company-staging
+        region: us-east-1
+      
+      prod:
+        profile: my-company-prod
+        region: us-east-1
+```
+
+**Configure AWS CLI profiles:**
+
+```bash
+# Development account
+aws configure --profile my-company-dev
+aws sts get-caller-identity --profile my-company-dev
+
+# Staging account
+aws configure --profile my-company-staging
+aws sts get-caller-identity --profile my-company-staging
+
+# Production account
+aws configure --profile my-company-prod
+aws sts get-caller-identity --profile my-company-prod
+```
+
+<Tip>
+Use separate AWS accounts for each environment. This provides the strongest isolation and simplifies billing.
+</Tip>
+
+### AWS SSO for multiple accounts
+
+```bash
+# Configure SSO
+aws configure sso
+# SSO start URL: https://my-company.awsapps.com/start
+# SSO region: us-east-1
+# Choose dev account, create profile: my-company-dev
+
+# Login to all accounts
+aws sso login --profile my-company-dev
+aws sso login --profile my-company-staging
+aws sso login --profile my-company-prod
+```
+
+## Querying environments
+
+### Query specific environment
+
+```bash
+# Development
+clanker ask --profile my-company-dev "What EC2 instances are running?"
+
+# Staging
+clanker ask --profile my-company-staging "Show me Lambda functions"
+
+# Production
+clanker ask --profile my-company-prod "What's the status of my RDS instances?"
+```
+
+### Default environment
+
+Without `--profile`, Clanker uses the default environment from config:
+
+```bash
+# Uses 'dev' (from default_environment in config)
+clanker ask "What's running?"
+
+# Equivalent to:
+clanker ask --profile my-company-dev "What's running?"
+```
+
+### Compare across environments
+
+```bash
+# Check all environments
+for env in dev staging prod; do
+  echo "=== $env ==="
+  clanker ask --profile my-company-$env "Show me EC2 instances" | grep -A 5 "running"
+done
+```
+
+## Creating infrastructure per environment
+
+### Environment-specific resources
+
+**Development (small, cheap):**
+
+```bash
+clanker ask --profile my-company-dev --maker "create:
+- EC2 instance: t3.small
+- RDS database: db.t3.small, no Multi-AZ
+- EKS cluster: 1 node, t3.small" > dev-plan.json
+
+clanker ask --apply --profile my-company-dev < dev-plan.json
+```
+
+**Staging (medium, production-like):**
+
+```bash
+clanker ask --profile my-company-staging --maker "create:
+- EC2 instance: t3.medium
+- RDS database: db.t3.medium, Multi-AZ
+- EKS cluster: 2 nodes, t3.medium" > staging-plan.json
+
+clanker ask --apply --profile my-company-staging < staging-plan.json
+```
+
+**Production (large, HA):**
+
+```bash
+clanker ask --profile my-company-prod --maker "create:
+- EC2 instances: c5.xlarge (3 instances across 3 AZs)
+- RDS database: db.r5.xlarge, Multi-AZ, automated backups
+- EKS cluster: 5 nodes, m5.large, across 3 AZs" > prod-plan.json
+
+clanker ask --apply --profile my-company-prod < prod-plan.json
+```
+
+### Tagging resources
+
+**Tag all resources with Environment:**
+
+```bash
+# Development
+clanker ask --profile my-company-dev --maker "tag all resources with Environment=dev"
+
+# Staging
+clanker ask --profile my-company-staging --maker "tag all resources with Environment=staging"
+
+# Production  
+clanker ask --profile my-company-prod --maker "tag all resources with Environment=prod"
+```
+
+This enables:
+- Cost tracking per environment
+- Resource filtering
+- Compliance reporting
+
+## Environment promotion workflow
+
+### Deploy to dev first
+
+```bash
+# 1. Test in dev
+clanker ask --profile my-company-dev --maker "deploy application v2.0 to dev" > deploy-plan.json
+clanker ask --apply --profile my-company-dev < deploy-plan.json
+
+# 2. Verify
+clanker ask --profile my-company-dev "Show me application v2.0 status"
+
+# 3. Run tests
+./run-integration-tests.sh https://dev-app.example.com
+```
+
+### Promote to staging
+
+```bash
+# Same plan, different profile
+clanker ask --apply --profile my-company-staging < deploy-plan.json
+
+# Verify
+clanker ask --profile my-company-staging "Show me application v2.0 status"
+
+# Run staging tests
+./run-integration-tests.sh https://staging-app.example.com
+```
+
+### Promote to production
+
+```bash
+# Production requires approval
+echo "Deploying to production. Continue? [y/N]"
+read -r response
+if [[ "$response" =~ ^[Yy]$ ]]; then
+  clanker ask --apply --profile my-company-prod < deploy-plan.json
+  
+  # Monitor
+  clanker ask --profile my-company-prod "Show me application v2.0 status and metrics"
+fi
+```
+
+## Kubernetes multi-environment
+
+### Create clusters per environment
+
+```bash
+# Dev cluster (small)
+clanker k8s create eks dev-cluster \
+  --profile my-company-dev \
+  --nodes 1 \
+  --node-type t3.small
+
+# Staging cluster (medium)
+clanker k8s create eks staging-cluster \
+  --profile my-company-staging \
+  --nodes 2 \
+  --node-type t3.medium
+
+# Prod cluster (large, HA)
+clanker k8s create eks prod-cluster \
+  --profile my-company-prod \
+  --nodes 5 \
+  --node-type m5.large
+```
+
+### Switch between clusters
+
+```bash
+# Configure kubeconfig for each
+clanker k8s kubeconfig eks dev-cluster --profile my-company-dev
+clanker k8s kubeconfig eks staging-cluster --profile my-company-staging  
+clanker k8s kubeconfig eks prod-cluster --profile my-company-prod
+
+# Switch context
+kubectl config use-context dev-cluster
+kubectl config use-context staging-cluster
+kubectl config use-context prod-cluster
+
+# Or use context in command
+kubectl get pods --context dev-cluster
+kubectl get pods --context staging-cluster
+kubectl get pods --context prod-cluster
+```
+
+### Deploy to K8s environments
+
+```bash
+# Dev
+kubectl apply -f k8s/ --context dev-cluster
+
+# Staging
+kubectl apply -f k8s/ --context staging-cluster
+
+# Production
+kubectl apply -f k8s/ --context prod-cluster
+```
+
+## Cost management per environment
+
+### Track costs by environment
+
+```bash
+# Development costs
+clanker cost summary --provider aws --profile my-company-dev
+
+# Staging costs
+clanker cost summary --provider aws --profile my-company-staging
+
+# Production costs
+clanker cost summary --provider aws --profile my-company-prod
+```
+
+**Compare costs:**
+
+```bash
+#!/bin/bash
+# compare-environment-costs.sh
+
+echo "Environment Cost Comparison"
+echo "==========================="
+
+for env in dev staging prod; do
+  profile="my-company-$env"
+  cost=$(clanker cost summary --profile $profile --format json | jq -r '.totalCost')
+  echo "$env: \$$cost"
+done
+```
+
+**Output:**
+
+```
+Environment Cost Comparison
+===========================
+dev: $245.67
+staging: $678.23
+prod: $2,450.18
+```
+
+### Optimize dev/staging costs
+
+```bash
+# Stop dev resources at night
+clanker ask --profile my-company-dev --maker "stop all EC2 instances tagged Environment=dev"
+
+# Find waste in staging
+clanker cost anomalies --profile my-company-staging
+
+# Right-size dev databases
+clanker ask --profile my-company-dev --maker "downsize dev-db from db.t3.medium to db.t3.small"
+```
+
+## Security per environment
+
+### Stricter controls in production
+
+**Development: Relaxed (for velocity):**
+
+```bash
+# Allow developers broad access
+clanker ask --profile my-company-dev --maker "grant developers PowerUserAccess role"
+
+# SSH from office
+clanker ask --profile my-company-dev --maker "allow SSH from 203.0.113.0/24"
+```
+
+**Production: Locked down:**
+
+```bash
+# Read-only for most users
+clanker ask --profile my-company-prod --maker "create read-only role for monitoring"
+
+# No SSH access
+clanker ask --profile my-company-prod "Show me security groups with SSH access"
+# Result should be: None (use Systems Manager Session Manager instead)
+
+# Require MFA for changes
+clanker ask --profile my-company-prod "Verify all users have MFA enabled"
+```
+
+### Audit per environment
+
+```bash
+# Dev security audit (less strict)
+clanker ask --profile my-company-dev "Show me public S3 buckets"
+
+# Prod security audit (must be clean)
+clanker ask --profile my-company-prod "Run comprehensive security audit"
+clanker ask --profile my-company-prod "Show me:
+- Security groups with 0.0.0.0/0 access
+- Public S3 buckets
+- Unencrypted RDS instances
+- IAM users without MFA"
+```
+
+## Multi-cloud multi-environment
+
+### AWS + GCP
+
+```yaml
+# ~/.clanker.yaml
+infra:
+  default_provider: aws
+  default_environment: dev
+  
+  aws:
+    environments:
+      dev:
+        profile: aws-dev
+        region: us-east-1
+      prod:
+        profile: aws-prod
+        region: us-east-1
+  
+  gcp:
+    dev:
+      project_id: my-company-dev
+      region: us-central1
+    prod:
+      project_id: my-company-prod
+      region: us-central1
+```
+
+**Query across clouds:**
+
+```bash
+# AWS dev
+clanker ask --profile aws-dev "Show me EC2 instances"
+
+# GCP dev
+clanker ask --gcp --gcp-project my-company-dev "Show me Compute Engine instances"
+
+# AWS prod
+clanker ask --profile aws-prod "Show me RDS instances"
+
+# GCP prod
+clanker ask --gcp --gcp-project my-company-prod "Show me Cloud SQL instances"
+```
+
+## Automation examples
+
+### Daily environment sync
+
+```bash
+#!/bin/bash
+# sync-staging-from-prod.sh
+
+echo "Syncing staging from production..."
+
+# 1. Snapshot production database
+PROD_SNAPSHOT=$(clanker ask --profile my-company-prod --maker "create snapshot of prod-db" --format json | jq -r '.snapshotId')
+
+echo "Created snapshot: $PROD_SNAPSHOT"
+
+# 2. Restore to staging
+clanker ask --profile my-company-staging --maker "restore staging-db from snapshot $PROD_SNAPSHOT"
+
+# 3. Sanitize data (remove PII)
+./sanitize-staging-data.sh
+
+echo "Staging synchronized with production data"
+```
+
+### Environment health check
+
+```bash
+#!/bin/bash
+# check-all-environments.sh
+
+for env in dev staging prod; do
+  echo "=== $env ==="
+  
+  # Check EC2 health
+  clanker ask --profile my-company-$env "Show me EC2 instances with issues"
+  
+  # Check RDS health
+  clanker ask --profile my-company-$env "Show me RDS instance status"
+  
+  # Check Lambda errors
+  clanker ask --profile my-company-$env "Show me Lambda functions with errors in the last hour"
+  
+  echo ""
+done
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Separate AWS accounts" icon="building">
+    Use different AWS accounts for dev, staging, and prod. This provides the strongest isolation.
+  </Card>
+  
+  <Card title="Progressive rollout" icon="stairs">
+    Always deploy to dev first, then staging, then production. Never skip environments.
+  </Card>
+  
+  <Card title="Tag everything" icon="tag">
+    Tag all resources with Environment tag. Use this for cost allocation and filtering.
+  </Card>
+  
+  <Card title="Automate promotion" icon="robot">
+    Use scripts to promote changes between environments consistently.
+  </Card>
+</CardGroup>
+
+## Environment strategy
+
+### Development
+
+- **Purpose**: Feature development and testing
+- **Size**: Small, cheap resources
+- **Uptime**: Stop during off-hours (60% cost savings)
+- **Security**: Relaxed for developer velocity
+- **Data**: Synthetic or anonymized
+
+### Staging
+
+- **Purpose**: Pre-production validation
+- **Size**: Similar to production (smaller scale)
+- **Uptime**: 24/7 for testing
+- **Security**: Production-like
+- **Data**: Sanitized copy of production
+
+### Production
+
+- **Purpose**: Customer-facing services
+- **Size**: Right-sized for load
+- **Uptime**: 24/7 with HA
+- **Security**: Maximum (MFA, encryption, audit trails)
+- **Data**: Real customer data
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Wrong environment selected">
+    If you accidentally target the wrong environment:
+    
+    ```bash
+    # Always double-check before applying
+    clanker ask --profile my-company-prod --maker "..."
+    # Review plan carefully, verify profile
+    
+    # If you applied to wrong environment:
+    # 1. Immediately rollback
+    clanker ask --maker --destroyer --profile my-company-prod "rollback last change"
+    
+    # 2. Check production health
+    clanker ask --profile my-company-prod "Show me recent changes and their impact"
+    ```
+    
+    Prevention:
+    - Always specify `--profile` explicitly in scripts
+    - Use different colors/prompts for each environment in terminal
+    - Require manual confirmation for production
+  </Accordion>
+  
+  <Accordion title="SSO session expired">
+    ```bash
+    # Re-authenticate
+    aws sso login --profile my-company-dev
+    aws sso login --profile my-company-staging
+    aws sso login --profile my-company-prod
+    
+    # Verify
+    aws sts get-caller-identity --profile my-company-prod
+    ```
+  </Accordion>
+  
+  <Accordion title="Can't switch Kubernetes context">
+    ```bash
+    # List available contexts
+    kubectl config get-contexts
+    
+    # If context missing, re-fetch kubeconfig
+    clanker k8s kubeconfig eks prod-cluster --profile my-company-prod
+    
+    # Switch context
+    kubectl config use-context prod-cluster
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Creating infrastructure" href="/guides/creating-infrastructure" icon="cloud">
+    Generate infrastructure plans for each environment
+  </Card>
+  
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Optimize costs per environment
+  </Card>
+  
+  <Card title="Security" href="/guides/security" icon="shield">
+    Implement security controls per environment
+  </Card>
+  
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Monitor all environments centrally
+  </Card>
+</CardGroup>

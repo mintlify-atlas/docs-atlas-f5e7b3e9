@@ -1,0 +1,383 @@
+---
+title: Monitoring and metrics
+description: Monitor Kubernetes cluster health, resource usage, and performance metrics
+---
+
+Clanker provides comprehensive monitoring capabilities to track cluster health and resource utilization.
+
+## Overview
+
+Monitoring features include:
+
+- **Node metrics**: CPU and memory usage per node
+- **Pod metrics**: Resource consumption by pods
+- **Cluster statistics**: Aggregate cluster-wide metrics
+- **Container metrics**: Per-container resource usage
+- **Logs access**: View pod and container logs
+
+<Info>
+Metrics require the Kubernetes Metrics Server to be installed in your cluster.
+</Info>
+
+## Node metrics
+
+View resource usage for cluster nodes:
+
+```bash
+# Get metrics for all nodes
+clanker k8s stats nodes
+
+# Sort by CPU usage
+clanker k8s stats nodes --sort-by cpu
+
+# Sort by memory usage
+clanker k8s stats nodes --sort-by memory
+
+# JSON output
+clanker k8s stats nodes -o json
+```
+
+**Example output:**
+
+```
+NAME                                       CPU      CPU%      MEMORY    MEM%
+ip-10-0-1-100.us-west-2.compute.internal   245m     12.3%     1456Mi    18.2%
+ip-10-0-1-101.us-west-2.compute.internal   189m     9.5%      1123Mi    14.0%
+ip-10-0-1-102.us-west-2.compute.internal   312m     15.6%     1789Mi    22.4%
+```
+
+<ParamField path="--sort-by" type="string">
+  Sort results by `cpu` or `memory`
+</ParamField>
+
+<ParamField path="-o, --output" type="string" default="table">
+  Output format: `table`, `json`, or `yaml`
+</ParamField>
+
+## Pod metrics
+
+Monitor resource consumption at the pod level:
+
+```bash
+# Get metrics for pods in default namespace
+clanker k8s stats pods
+
+# Get metrics for specific namespace
+clanker k8s stats pods -n kube-system
+
+# Get metrics for all namespaces
+clanker k8s stats pods -A
+
+# Sort by memory usage
+clanker k8s stats pods --sort-by memory
+```
+
+**Example output:**
+
+```
+NAME                                CPU        MEMORY
+nginx-7c6c8f9f5d-4xkzp              5m         32Mi
+api-server-5d7b9c8d4f-8hjkl         42m        128Mi
+redis-master-0                      8m         64Mi
+```
+
+### Specific pod metrics
+
+View detailed metrics for a single pod:
+
+```bash
+# Get pod metrics
+clanker k8s stats pod nginx-7c6c8f9f5d-4xkzp
+
+# Include container-level metrics
+clanker k8s stats pod nginx-7c6c8f9f5d-4xkzp --containers
+
+# Different namespace
+clanker k8s stats pod coredns-5d78c9869d-abc12 -n kube-system
+```
+
+**Example with containers:**
+
+```
+Pod: default/nginx-7c6c8f9f5d-4xkzp
+  CPU: 5m
+  Memory: 32Mi
+
+Containers:
+  nginx: CPU 5m, Memory 32Mi
+```
+
+## Cluster-wide metrics
+
+Get aggregated statistics for the entire cluster:
+
+```bash
+# View cluster totals
+clanker k8s stats cluster
+
+# JSON output for automation
+clanker k8s stats cluster -o json
+```
+
+**Example output:**
+
+```
+Cluster Metrics:
+  Nodes: 3 (Ready: 3)
+  CPU: 746m / 6000m (12.4%)
+  Memory: 4368Mi / 24000Mi (18.2%)
+
+Node Details:
+NAME                            CPU      CPU%    MEMORY   MEM%
+ip-10-0-1-100                   245m     12.3%   1456Mi   18.2%
+ip-10-0-1-101                   189m     9.5%    1123Mi   14.0%
+ip-10-0-1-102                   312m     15.6%   1789Mi   22.4%
+```
+
+## Viewing logs
+
+Access pod and container logs:
+
+```bash
+# Get recent logs (default: 100 lines)
+clanker k8s logs nginx-7c6c8f9f5d-4xkzp
+
+# Specify number of lines
+clanker k8s logs api-server-abc123 --tail 50
+
+# Follow logs (stream)
+clanker k8s logs api-server-abc123 -f
+
+# Logs from specific container
+clanker k8s logs multi-container-pod -c sidecar
+
+# Previous terminated container
+clanker k8s logs crashing-pod -p
+
+# Logs since duration
+clanker k8s logs api-server-abc123 --since 1h
+
+# Include timestamps
+clanker k8s logs api-server-abc123 --timestamps
+
+# All containers in pod
+clanker k8s logs multi-container-pod --all-containers
+```
+
+### Log options
+
+<ParamField path="-c, --container" type="string">
+  Container name (for multi-container pods)
+</ParamField>
+
+<ParamField path="-f, --follow" type="boolean">
+  Stream logs in real-time
+</ParamField>
+
+<ParamField path="-p, --previous" type="boolean">
+  Show logs from previous container instance
+</ParamField>
+
+<ParamField path="--tail" type="integer" default="100">
+  Number of lines to show from end of logs
+</ParamField>
+
+<ParamField path="--since" type="string">
+  Show logs since duration (e.g., 1h, 30m, 10s)
+</ParamField>
+
+<ParamField path="--timestamps" type="boolean">
+  Include timestamps in output
+</ParamField>
+
+<ParamField path="--all-containers" type="boolean">
+  Show logs from all containers
+</ParamField>
+
+## Cluster resources
+
+Retrieve comprehensive resource information:
+
+```bash
+# Get all resources from specific cluster
+clanker k8s resources --cluster my-cluster
+
+# YAML output
+clanker k8s resources --cluster my-cluster -o yaml
+
+# Get resources from all EKS clusters in region
+clanker k8s resources
+```
+
+This fetches:
+- Nodes
+- Pods
+- Services
+- Persistent Volumes
+- ConfigMaps
+
+## Metrics implementation
+
+Metrics are collected via the Kubernetes Metrics Server:
+
+```go cmd/k8s.go:1552
+func runStatsNodes(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	// Run kubectl top nodes
+	kubectlArgs := []string{"top", "nodes"}
+	kubectlCmd := exec.CommandContext(ctx, "kubectl", kubectlArgs...)
+	output, err := kubectlCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get node metrics: %w\n%s", err, string(output))
+	}
+
+	if k8sOutputFormat == "json" || k8sOutputFormat == "yaml" {
+		metrics := parseNodeMetricsOutput(string(output))
+		formatted, _ := json.MarshalIndent(metrics, "", "  ")
+		fmt.Println(string(formatted))
+	} else {
+		fmt.Print(string(output))
+	}
+
+	return nil
+}
+```
+
+Telemetry subsystem handles advanced metrics queries:
+
+```go internal/k8s/telemetry/telemetry.go:111
+func (s *SubAgent) handleClusterMetrics(ctx context.Context, opts QueryOptions) (*Response, error) {
+	result, err := s.metrics.GetClusterMetrics(ctx)
+	if err != nil {
+		return &Response{
+			Type:    ResponseTypeError,
+			Message: fmt.Sprintf("Failed to get cluster metrics: %v", err),
+			Error:   err,
+		}, nil
+	}
+
+	return &Response{
+		Type: ResponseTypeResult,
+		Data: result,
+		Message: fmt.Sprintf("Cluster metrics: %d nodes, CPU %s/%s (%.1f%%), Memory %s/%s (%.1f%%)",
+			result.NodeCount, result.UsedCPU, result.TotalCPU, result.CPUPercent,
+			result.UsedMemory, result.TotalMemory, result.MemoryPercent),
+	}, nil
+}
+```
+
+## Installing Metrics Server
+
+If metrics are unavailable, install the Metrics Server:
+
+```bash
+# Apply Metrics Server manifest
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Verify installation
+kubectl get deployment metrics-server -n kube-system
+
+# Wait for metrics to be available
+kubectl top nodes
+```
+
+<Note>
+EKS and GKE clusters may require additional configuration for Metrics Server.
+</Note>
+
+## Monitoring best practices
+
+<Tip>
+**Set up alerts**: Use metrics to establish baseline performance and alert on anomalies.
+</Tip>
+
+<Tip>
+**Monitor trends**: Track resource usage over time to identify capacity planning needs.
+</Tip>
+
+<Tip>
+**Check logs regularly**: Review application logs for errors and warnings.
+</Tip>
+
+<Tip>
+**Use namespaces**: Organize workloads by namespace for easier monitoring.
+</Tip>
+
+## Advanced monitoring
+
+### Prometheus and Grafana
+
+For production monitoring, integrate with Prometheus:
+
+```bash
+# Install Prometheus using Helm
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install prometheus prometheus-community/kube-prometheus-stack
+
+# Access Grafana dashboard
+kubectl port-forward svc/prometheus-grafana 3000:80
+```
+
+### CloudWatch Container Insights (EKS)
+
+Enable Container Insights for EKS clusters:
+
+```bash
+# Install CloudWatch agent
+eksctl utils install-cloudwatch-insights --cluster my-cluster
+
+# View metrics in AWS CloudWatch console
+```
+
+### Google Cloud Monitoring (GKE)
+
+GKE clusters automatically integrate with Google Cloud Monitoring:
+
+```bash
+# View in Google Cloud Console
+gcloud logging read "resource.type=k8s_cluster" --limit 50
+```
+
+## Troubleshooting metrics
+
+### Metrics not available
+
+If `kubectl top` returns an error:
+
+```bash
+# Check Metrics Server status
+kubectl get apiservice v1beta1.metrics.k8s.io -o yaml
+
+# View Metrics Server logs
+kubectl logs -n kube-system -l k8s-app=metrics-server
+
+# Restart Metrics Server
+kubectl rollout restart deployment metrics-server -n kube-system
+```
+
+### High resource usage
+
+Investigate resource-intensive workloads:
+
+```bash
+# Find top consumers
+clanker k8s stats pods -A --sort-by memory
+
+# Check specific pod
+clanker k8s stats pod high-memory-pod --containers
+
+# View logs for issues
+clanker k8s logs high-memory-pod --tail 100
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Ask mode" icon="comments" href="/kubernetes/ask-mode">
+    Query metrics with natural language
+  </Card>
+  <Card title="Cluster management" icon="layer-group" href="/kubernetes/cluster-management">
+    Scale clusters based on metrics
+  </Card>
+</CardGroup>

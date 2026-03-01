@@ -1,0 +1,529 @@
+---
+title: Cost analysis
+description: Analyze cloud spending and identify cost optimization opportunities
+---
+
+Clanker provides comprehensive cost analysis capabilities using AWS Cost Explorer, GCP Cloud Billing, and other cloud provider billing APIs.
+
+## Getting started with cost analysis
+
+Clanker fetches real cost data directly from your cloud provider APIs, giving you accurate, up-to-date spending information.
+
+### View overall costs
+
+```bash
+# Current month summary
+clanker cost
+clanker cost summary
+
+# Specific date range
+clanker cost summary --start 2026-02-01 --end 2026-02-28
+
+# JSON output for automation
+clanker cost summary --format json
+```
+
+**Example output:**
+
+```
+========================================
+Cloud Cost Summary
+Period: March 1-28, 2026
+========================================
+
+Total Cost: $2,847.23
+
+By Provider:
+  AWS:         $2,450.18  (86%)
+  GCP:         $285.50   (10%)
+  Cloudflare:  $111.55   (4%)
+
+Top 5 Services:
+  1. EC2:               $1,234.56  (43%)
+  2. RDS:               $678.90   (24%)
+  3. EKS:               $245.67   (9%)
+  4. Lambda:            $123.45   (4%)
+  5. S3:                $89.12    (3%)
+
+Forecast (End of Month): $3,120.45
+Projected Variance: +9.6%
+```
+
+## Detailed cost breakdown
+
+### Service-level analysis
+
+```bash
+# All services
+clanker cost detail --provider aws
+
+# Specific provider
+clanker cost detail --provider gcp
+clanker cost detail --provider azure
+
+# JSON format
+clanker cost detail --format json
+```
+
+**Service breakdown:**
+
+```
+========================================
+AWS Cost Breakdown (March 2026)
+========================================
+
+EC2 Instances: $1,234.56
+  c5.2xlarge (prod-app-1):        $245.60
+  c5.2xlarge (prod-app-2):        $245.60
+  m5.large (api-server):          $112.50
+  t3.medium (dev-instances x5):   $156.80
+  t3.small (bastion):             $15.36
+  Reserved Instance credits:      -$41.30
+
+RDS: $678.90
+  db.r5.xlarge (prod-postgres):   $456.00
+  db.t3.medium (staging-db):      $112.40
+  Backup storage (285 GB):        $57.00
+  Snapshot storage (120 GB):      $24.00
+  Enhanced monitoring:            $29.50
+
+EKS: $245.67
+  Control plane (prod-cluster):   $73.00
+  Control plane (staging-cluster):$73.00
+  Worker nodes (m5.large x4):     $99.67
+
+Lambda: $123.45
+  Invocations (12.5M):            $2.50
+  Duration (45.2M GB-seconds):    $75.30
+  Provisioned concurrency:        $45.65
+
+S3: $89.12
+  Standard storage (456 GB):      $10.49
+  Intelligent-Tiering (1.2 TB):   $25.60
+  Glacier (2.8 TB):               $8.40
+  Requests (2.3M):                $23.52
+  Data transfer (890 GB):         $21.11
+
+CloudWatch: $67.23
+  Logs ingestion (125 GB):        $45.60
+  Logs storage (80 GB):           $4.00
+  Metrics (custom, 450):          $13.50
+  Alarms (35):                    $3.50
+  Dashboards (3):                 $0.63
+
+NAT Gateway: $56.78
+  Hourly charges:                 $32.40
+  Data processing (245 GB):       $24.38
+
+ELB/ALB: $45.90
+  ALB hours (2 ALBs):             $32.40
+  LCU charges:                    $13.50
+
+Route53: $12.34
+  Hosted zones (3):               $1.50
+  Queries (25M):                  $10.84
+```
+
+### Tag-based cost analysis
+
+```bash
+# By environment
+clanker cost tags --key Environment
+
+# By team
+clanker cost tags --key Team
+
+# By project
+clanker cost tags --key Project --format json
+```
+
+**Tag breakdown:**
+
+```
+========================================
+Costs by Environment Tag
+========================================
+
+production:    $1,845.67  (65%)
+staging:       $678.23   (24%)
+development:   $223.45   (8%)
+untagged:      $99.88    (3%)
+
+Recommendation: Tag the 8 untagged resources
+  - 3 EC2 instances
+  - 2 S3 buckets
+  - 2 EBS volumes
+  - 1 RDS instance
+```
+
+## Cost trends
+
+### Historical analysis
+
+```bash
+# Last 30 days
+clanker cost trend
+
+# Custom date range
+clanker cost trend --start 2026-01-01 --end 2026-03-01
+
+# JSON for charting
+clanker cost trend --format json > cost-trend.json
+```
+
+**Trend output:**
+
+```
+========================================
+Cost Trend (Last 30 Days)
+========================================
+
+Date       | Daily Cost | 7-Day Avg | Change
+-----------|------------|-----------|--------
+2026-02-27 | $94.23    | $89.45    | +5.3%
+2026-02-28 | $96.78    | $90.12    | +7.4%
+2026-03-01 | $102.34   | $91.23    | +12.2%  ⬆️
+2026-03-02 | $98.45    | $92.11    | +6.9%
+2026-03-03 | $95.67    | $92.78    | +3.1%
+[...]
+
+Trend: ↗️ Increasing (+12% vs. last week)
+Peak day: March 1 ($102.34)
+Lowest day: Feb 15 ($78.90)
+
+Top cost increases:
+1. EKS worker nodes: +$23/day (new cluster)
+2. RDS storage: +$8/day (database growth)
+3. S3 requests: +$5/day (API traffic increase)
+```
+
+## Forecasting
+
+### End of month projection
+
+```bash
+clanker cost forecast
+```
+
+**Forecast output:**
+
+```
+========================================
+Cost Forecast
+========================================
+
+Current Month (March 2026)
+  Days elapsed:        28 / 31
+  Actual spend:        $2,847.23
+  Projected EOM:       $3,120.45
+  Budget:              $3,000.00
+  ⚠️  Over budget:      $120.45 (4.0%)
+
+Next Month (April 2026)
+  Projected:           $3,245.67
+  Trend:               +4.0%
+
+Confidence: 85% (based on 90-day trend)
+
+Projected by service (April):
+  EC2:      $1,289.45  (+4.4%)
+  RDS:      $712.34   (+4.9%)
+  EKS:      $289.67   (+17.9%)  ⬆️
+  Lambda:   $118.90   (-3.7%)
+  S3:       $95.23    (+6.9%)
+  Other:    $740.08   (+2.1%)
+```
+
+## Anomaly detection
+
+### Find cost anomalies
+
+```bash
+clanker cost anomalies
+```
+
+**Anomaly report:**
+
+```
+========================================
+Cost Anomalies Detected
+========================================
+
+🚨 High Impact (Monthly waste: $423)
+
+1. Idle EC2 Instance: i-0a1b2c3d4e5f6 (dev-test-1)
+   - Running 24/7 with 0.2% avg CPU
+   - Last SSH login: 14 days ago
+   - Monthly cost: $125.60
+   - Recommendation: Stop or terminate
+   - Potential savings: $125/month
+
+2. Unused RDS: dev-playground-db
+   - db.t3.medium, no connections in 30 days
+   - Created: 2025-11-15 (forgotten?)
+   - Monthly cost: $178.40
+   - Recommendation: Take final snapshot, delete
+   - Potential savings: $178/month
+
+3. Unattached EBS Volumes: 8 volumes
+   - Total: 1.2 TB across 8 volumes
+   - Detached: 15-60 days ago
+   - Monthly cost: $120.00
+   - Recommendation: Delete or attach
+   - Potential savings: $120/month
+
+⚠️  Medium Impact (Monthly waste: $156)
+
+4. Underutilized RDS: staging-db
+   - db.t3.large, avg CPU: 5%, max connections: 3
+   - Right-size to: db.t3.small
+   - Monthly cost: $223.20
+   - Potential savings: $89/month
+
+5. S3 Glacier retrieval costs spike
+   - Unusual retrieval: 450 GB on March 3
+   - Cost: $45.60 (vs $2.30 typical daily)
+   - Recommendation: Review retrieval patterns
+
+6. NAT Gateway underutilized: nat-0abc123
+   - Data processed: 12 GB/day avg
+   - Consider: VPC endpoints for S3/DynamoDB
+   - Potential savings: $67/month
+
+💡 Low Impact (Optimization opportunities)
+
+7. S3 Standard tier old objects: logs-archive-2023
+   - 456 GB not accessed in 180 days
+   - Move to: Glacier Deep Archive
+   - Potential savings: $10/month
+
+8. Provisioned Lambda concurrency unused
+   - email-sender: 10 provisioned, max used: 2
+   - Reduce to: 3
+   - Potential savings: $49/month
+
+9. CloudWatch Logs retention too long
+   - 12 log groups with 90-day retention
+   - Recommendation: 7-day retention for dev logs
+   - Potential savings: $8/month
+
+========================================
+Total Potential Monthly Savings: $579
+Annual savings: $6,948
+========================================
+```
+
+## Export and reporting
+
+### Export cost data
+
+```bash
+# CSV export
+clanker cost export --output costs.csv
+
+# JSON export  
+clanker cost export --output costs.json --format json
+
+# Specific provider
+clanker cost export --output aws-costs.csv --provider aws
+
+# Date range
+clanker cost export --output feb-costs.csv --start 2026-02-01 --end 2026-02-28
+```
+
+**CSV format:**
+
+```csv
+Date,Service,Cost,Provider
+2026-03-01,EC2,41.23,AWS
+2026-03-01,RDS,22.56,AWS
+2026-03-01,Lambda,4.12,AWS
+2026-03-01,S3,2.89,AWS
+[...]
+```
+
+### Automate reports
+
+```bash
+#!/bin/bash
+# weekly-cost-report.sh
+
+WEEK_START=$(date -d '7 days ago' +%Y-%m-%d)
+WEEK_END=$(date +%Y-%m-%d)
+
+# Generate report
+REPORT="cost-report-$(date +%Y-%m-%d).txt"
+
+echo "Weekly Cost Report: $WEEK_START to $WEEK_END" > $REPORT
+echo "" >> $REPORT
+
+clanker cost summary --start $WEEK_START --end $WEEK_END >> $REPORT
+
+echo "" >> $REPORT
+echo "Anomalies:" >> $REPORT
+clanker cost anomalies >> $REPORT
+
+# Email or upload
+mail -s "Weekly Cost Report" team@example.com < $REPORT
+```
+
+## Multi-cloud cost analysis
+
+### Compare providers
+
+```bash
+# All providers
+clanker cost summary --provider all
+
+# Compare specific providers
+clanker cost summary --provider aws,gcp --format json
+```
+
+### GCP costs
+
+```bash
+# Requires GCP project configured
+clanker cost summary --provider gcp
+clanker cost detail --provider gcp
+```
+
+### Azure costs
+
+```bash
+# Requires Azure subscription configured
+clanker cost summary --provider azure
+clanker cost detail --provider azure
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Review weekly" icon="calendar-week">
+    Run cost reports weekly to catch anomalies early before they compound.
+  </Card>
+  
+  <Card title="Tag everything" icon="tag">
+    Tag all resources with Environment, Team, and Project for accurate cost allocation.
+  </Card>
+  
+  <Card title="Act on anomalies" icon="wrench">
+    Don't just review anomalies—actually stop idle resources and right-size services.
+  </Card>
+  
+  <Card title="Set budgets" icon="dollar-sign">
+    Use AWS Budgets or equivalent to get alerts when spending exceeds thresholds.
+  </Card>
+</CardGroup>
+
+## Advanced analysis
+
+### Custom queries
+
+```bash
+# Natural language cost queries
+clanker ask "What's our EC2 spending trend over the last 3 months?"
+clanker ask "Which Lambda functions cost the most?"
+clanker ask "Show me RDS costs by instance type"
+clanker ask "What are our data transfer costs?"
+```
+
+### Cost optimization queries
+
+```bash
+clanker ask "Find EC2 instances with low CPU that could be downsized"
+clanker ask "Show me EBS volumes that could be moved to gp3"
+clanker ask "Which S3 buckets should use Intelligent-Tiering?"
+clanker ask "Find RDS instances that could use Reserved Instances"
+```
+
+## Integration with other tools
+
+### AWS Cost Explorer integration
+
+Clanker uses the AWS Cost Explorer API directly:
+
+```bash
+# Verify Cost Explorer is enabled
+aws ce get-cost-and-usage \
+  --time-period Start=2026-03-01,End=2026-03-02 \
+  --granularity DAILY \
+  --metrics UnblendedCost
+```
+
+<Note>
+Cost Explorer data is typically delayed by 24 hours. For today's costs, data may not be available until tomorrow.
+</Note>
+
+### CloudWatch billing alarms
+
+```bash
+# Create billing alarm with maker
+clanker ask --maker "create a CloudWatch alarm when my monthly bill exceeds $3000"
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No cost data showing">
+    If cost commands return no data:
+    
+    1. **Cost Explorer not enabled** (AWS)
+       - Enable in AWS Console: Billing > Cost Explorer
+    
+    2. **Insufficient permissions**
+       ```bash
+       # Required IAM permissions:
+       # ce:GetCostAndUsage
+       # ce:GetCostForecast  
+       # ce:GetAnomalies
+       ```
+    
+    3. **Date range too recent**
+       ```bash
+       # Use date at least 24-48 hours old
+       clanker cost summary --start 2026-02-15 --end 2026-02-28
+       ```
+  </Accordion>
+  
+  <Accordion title="Forecast unavailable">
+    AWS Cost Explorer forecast requires:
+    - At least 2 weeks of historical data
+    - Sufficient data points for trend analysis
+    
+    ```bash
+    # Check if you have enough history
+    clanker cost trend --start 2026-02-01
+    ```
+  </Accordion>
+  
+  <Accordion title="Costs don't match AWS console">
+    Differences can occur due to:
+    
+    1. **Time zone differences** (UTC vs. local)
+    2. **Blended vs. unblended costs**
+    3. **Credits and refunds** (applied differently)
+    4. **Data delay** (24-48 hour lag)
+    
+    Clanker uses unblended costs by default.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Act on cost analysis findings to reduce spending
+  </Card>
+  
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Set up ongoing cost monitoring
+  </Card>
+  
+  <Card title="Security audit" href="/guides/security-audit" icon="shield-check">
+    Combine cost and security analysis
+  </Card>
+  
+  <Card title="Multi-environment" href="/guides/multi-environment" icon="network-wired">
+    Track costs across dev, staging, and prod
+  </Card>
+</CardGroup>

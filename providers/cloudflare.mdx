@@ -1,0 +1,490 @@
+---
+title: Cloudflare
+description: Manage DNS, Workers, security, and Zero Trust with Clanker CLI
+---
+
+Clanker CLI provides comprehensive Cloudflare integration, allowing you to manage DNS records, Workers, security rules, Zero Trust tunnels, and more using natural language or direct commands.
+
+## Authentication
+
+Clanker uses the Cloudflare API for most operations. You'll need an API token with appropriate permissions.
+
+### API token configuration
+
+Configure your Cloudflare API token in one of the following ways:
+
+```yaml .clanker.yaml
+cloudflare:
+  api_token: "your-api-token"
+  account_id: "your-account-id"  # Optional but recommended
+```
+
+Or set via environment variables:
+
+```bash
+export CLOUDFLARE_API_TOKEN="your-api-token"
+export CLOUDFLARE_ACCOUNT_ID="your-account-id"
+
+# Alternative environment variable names
+export CF_API_TOKEN="your-api-token"
+export CF_ACCOUNT_ID="your-account-id"
+```
+
+<Note>
+  Clanker resolves credentials in this order:
+  1. Configuration file (`cloudflare.api_token` and `cloudflare.account_id`)
+  2. `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` environment variables
+  3. `CF_API_TOKEN` / `CF_ACCOUNT_ID` environment variables
+</Note>
+
+### Creating an API token
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
+2. Click "Create Token"
+3. Use the "Edit zone DNS" template or create a custom token
+4. Grant appropriate permissions for the resources you want to manage
+
+## Cloudflare features
+
+Clanker supports the following Cloudflare services:
+
+<CardGroup cols={2}>
+  <Card title="DNS Management" icon="globe" href="#dns-management">
+    Create, update, and delete DNS records with natural language
+  </Card>
+
+  <Card title="Workers & Pages" icon="code" href="#workers--pages">
+    Deploy and manage Cloudflare Workers, KV, D1, R2, and Pages
+  </Card>
+
+  <Card title="Security (WAF)" icon="shield" href="#security--waf">
+    Configure firewall rules, rate limiting, and WAF policies
+  </Card>
+
+  <Card title="Zero Trust" icon="lock" href="#zero-trust">
+    Manage Cloudflare Tunnels and Access applications
+  </Card>
+</CardGroup>
+
+## DNS management
+
+Manage DNS records using natural language or direct commands.
+
+### Natural language DNS queries
+
+```bash
+# List zones
+clanker ask "show me all my cloudflare zones"
+
+# List DNS records
+clanker ask "what DNS records exist for example.com?"
+
+# Create a record
+clanker ask "create an A record for api.example.com pointing to 192.0.2.1"
+
+# Update a record
+clanker ask "update the CNAME record for www.example.com to point to example.com"
+```
+
+### Direct DNS commands
+
+```bash
+# List all zones
+clanker cf list zones
+
+# List DNS records for a zone
+clanker cf list records --zone-name example.com
+
+# Using zone ID instead
+clanker cf list records --zone <zone-id>
+```
+
+### DNS record types supported
+
+- A (IPv4 address)
+- AAAA (IPv6 address)
+- CNAME (canonical name)
+- MX (mail exchange)
+- TXT (text record)
+- NS (nameserver)
+- SRV (service record)
+- CAA (certificate authority authorization)
+- PTR (pointer record)
+
+### DNS record features
+
+<AccordionGroup>
+  <Accordion title="Proxied vs DNS-only">
+    Control whether records are proxied through Cloudflare's CDN:
+    
+    ```bash
+    # Proxied (orange cloud)
+    clanker ask "create A record for app.example.com to 192.0.2.1 with proxy enabled"
+    
+    # DNS-only (grey cloud)
+    clanker ask "create A record for ftp.example.com to 192.0.2.2 DNS only"
+    ```
+  </Accordion>
+
+  <Accordion title="TTL configuration">
+    Set custom TTL values for records:
+    
+    ```bash
+    clanker ask "create A record with TTL 3600 for api.example.com"
+    ```
+  </Accordion>
+
+  <Accordion title="Record management">
+    Update or delete existing records:
+    
+    ```bash
+    # Update
+    clanker ask "update the A record for api.example.com to 192.0.2.10"
+    
+    # Delete
+    clanker ask "delete the TXT record for _verify.example.com"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Workers & Pages
+
+Manage Cloudflare Workers, KV namespaces, D1 databases, R2 buckets, and Pages projects.
+
+### Workers
+
+<Warning>
+  Workers management requires the `wrangler` CLI to be installed:
+  ```bash
+  npm install -g wrangler
+  ```
+</Warning>
+
+```bash
+# List Workers
+clanker cf list workers
+
+# Deploy a Worker
+clanker ask "deploy worker called my-api"
+
+# Create a new Worker project
+clanker ask "create a new worker project called my-worker"
+```
+
+### Workers KV
+
+```bash
+# List KV namespaces
+clanker cf list kv-namespaces
+
+# Create a namespace
+clanker ask "create a KV namespace called session-storage"
+
+# Delete a namespace
+clanker ask "delete KV namespace session-storage"
+```
+
+### D1 Databases
+
+```bash
+# List D1 databases
+clanker cf list d1-databases
+
+# Create a database
+clanker ask "create a D1 database called user-db"
+
+# Delete a database
+clanker ask "delete D1 database user-db"
+```
+
+### R2 Storage
+
+```bash
+# List R2 buckets
+clanker cf list r2-buckets
+
+# Create a bucket
+clanker ask "create an R2 bucket called media-assets"
+
+# Delete a bucket
+clanker ask "delete R2 bucket media-assets"
+```
+
+### Pages
+
+```bash
+# List Pages projects
+clanker ask "list all Pages projects"
+
+# Deploy to Pages
+clanker ask "deploy to Pages project my-site"
+
+# Create a Pages project
+clanker ask "create Pages project called docs-site"
+```
+
+## Security & WAF
+
+Manage firewall rules, rate limiting, and WAF configurations.
+
+### Firewall rules
+
+```bash
+# List firewall rules
+clanker cf list firewall-rules --zone-name example.com
+
+# Create a firewall rule
+clanker ask "create a firewall rule to block traffic from 192.0.2.0/24 for example.com"
+
+# Enable/disable a rule
+clanker ask "disable firewall rule <rule-id> for example.com"
+```
+
+### Rate limiting
+
+```bash
+# Create rate limit
+clanker ask "create rate limiting rule for example.com with 100 requests per minute"
+
+# List rate limits
+clanker ask "show rate limiting rules for example.com"
+```
+
+### Security levels
+
+```bash
+# Set security level
+clanker ask "set security level to under attack mode for example.com"
+
+# Check current security level
+clanker ask "what's the security level for example.com?"
+```
+
+Available security levels:
+- `essentially_off` - Lowest security
+- `low` - Low security
+- `medium` - Medium security (default)
+- `high` - High security
+- `under_attack` - I'm Under Attack mode
+
+### Page rules
+
+```bash
+# List page rules
+clanker cf list page-rules --zone-name example.com
+```
+
+## Zero Trust
+
+Manage Cloudflare Tunnels and Access applications.
+
+### Cloudflare Tunnels
+
+<Warning>
+  Tunnel management requires the `cloudflared` CLI to be installed. Download from:
+  https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+</Warning>
+
+```bash
+# List tunnels
+clanker cf list tunnels
+
+# Create a tunnel
+clanker ask "create a tunnel called my-app-tunnel"
+
+# Delete a tunnel
+clanker ask "delete tunnel my-app-tunnel"
+
+# Route DNS to tunnel
+clanker ask "route app.example.com to tunnel my-app-tunnel"
+```
+
+### Access applications
+
+```bash
+# List Access applications
+clanker ask "show all Zero Trust Access applications"
+
+# Create an Access application
+clanker ask "create Access application called internal-dashboard"
+
+# Delete an Access application
+clanker ask "delete Access app <app-id>"
+```
+
+## Error handling
+
+Clanker provides helpful error hints for Cloudflare operations:
+
+<CodeGroup>
+```bash Authentication error
+# Error: unauthorized or invalid token
+# (hint: check your CLOUDFLARE_API_TOKEN is valid)
+```
+
+```bash Permission error
+# Error: forbidden
+# (hint: your API token may be missing required permissions)
+```
+
+```bash Resource not found
+# Error: zone not found
+# (hint: resource not found or incorrect zone/account ID)
+```
+
+```bash Rate limiting
+# Error: rate limited
+# (hint: rate limited, try again in a few seconds)
+```
+</CodeGroup>
+
+### Retry mechanism
+
+Clanker automatically retries failed API calls with exponential backoff for:
+
+- Rate limiting errors
+- Timeout errors
+- Temporarily unavailable services
+- Connection errors
+
+Retries occur at 200ms, 500ms, and 1200ms intervals.
+
+## Implementation details
+
+### Client initialization
+
+From `internal/cloudflare/client.go:52`:
+
+```go
+func NewClient(accountID, apiToken string, debug bool) (*Client, error) {
+    if strings.TrimSpace(apiToken) == "" {
+        return nil, fmt.Errorf("cloudflare api_token is required")
+    }
+    return &Client{
+        accountID: accountID,
+        apiToken:  apiToken,
+        debug:     debug,
+    }, nil
+}
+```
+
+### API calls
+
+All Cloudflare API operations use curl with retry logic:
+
+From `internal/cloudflare/client.go:104`:
+
+```go
+func (c *Client) RunAPIWithContext(ctx context.Context, method, endpoint, body string) (string, error) {
+    // Uses curl to make API calls
+    // Implements exponential backoff retry
+    // Returns formatted response or error
+}
+```
+
+### CLI tools
+
+Clanker integrates with three CLI tools:
+
+1. **curl** - For API operations (required)
+2. **wrangler** - For Workers, KV, D1, R2, and Pages (optional)
+3. **cloudflared** - For Tunnel operations (optional)
+
+From `internal/cloudflare/client.go:172`:
+
+```go
+// RunWrangler executes a wrangler CLI command
+func (c *Client) RunWrangler(args ...string) (string, error)
+
+// RunCloudflared executes a cloudflared CLI command  
+func (c *Client) RunCloudflared(args ...string) (string, error)
+```
+
+### Sub-agents
+
+Clanker uses specialized sub-agents for different Cloudflare services:
+
+- **DNS sub-agent** (`internal/cloudflare/dns/`) - Manages DNS records
+- **Workers sub-agent** (`internal/cloudflare/workers/`) - Manages Workers, KV, D1, R2, Pages
+- **WAF sub-agent** (`internal/cloudflare/waf/`) - Manages firewall rules and security
+- **Zero Trust sub-agent** (`internal/cloudflare/zerotrust/`) - Manages Tunnels and Access
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use scoped API tokens" icon="key">
+    Create API tokens with minimal required permissions instead of using Global API Keys.
+  </Card>
+
+  <Card title="Configure account ID" icon="id-card">
+    Set your account ID in `.clanker.yaml` for faster operations and better error messages.
+  </Card>
+
+  <Card title="Zone-specific queries" icon="bullseye">
+    Include the zone name in your queries for faster DNS operations.
+  </Card>
+
+  <Card title="Install CLI tools" icon="terminal">
+    Install `wrangler` and `cloudflared` for full Workers and Tunnel support.
+  </Card>
+</CardGroup>
+
+## Examples
+
+### List all zones
+
+```bash
+clanker cf list zones
+```
+
+Output:
+```
+Cloudflare Zones:
+
+  example.com
+    ID: abc123...
+    Status: active
+    Plan: Free
+    Nameservers: alice.ns.cloudflare.com, bob.ns.cloudflare.com
+```
+
+### Create an A record
+
+```bash
+clanker ask "create an A record for api.example.com pointing to 192.0.2.1 with proxy enabled"
+```
+
+Generated plan:
+```
+Create A record api.example.com -> 192.0.2.1
+- Proxied: true
+- TTL: Auto
+```
+
+### List Workers
+
+```bash
+clanker cf list workers
+```
+
+### Deploy to Pages
+
+```bash
+clanker ask "deploy to Pages project my-docs"
+```
+
+Generated plan:
+```
+Deploy to Pages: my-docs
+
+Command:
+  wrangler pages deploy . --project-name my-docs
+
+Notes:
+- Run this command from the directory containing your built assets
+- The '.' represents the current directory as the source
+```
+
+<Check>
+  Cloudflare integration requires a valid API token. Create one at https://dash.cloudflare.com/profile/api-tokens
+</Check>

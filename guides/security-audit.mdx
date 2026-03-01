@@ -1,0 +1,493 @@
+---
+title: Security audit
+description: Audit your cloud infrastructure security with Clanker CLI
+---
+
+Clanker helps you identify security vulnerabilities and compliance issues across your cloud infrastructure using natural language queries.
+
+## Quick security checks
+
+### Check for common security issues
+
+```bash
+# Open security groups
+clanker ask "Show me security groups with port 22 open to the world"
+clanker ask "Find security groups with 0.0.0.0/0 access"
+
+# Public resources
+clanker ask "Show me public S3 buckets"
+clanker ask "List EC2 instances with public IPs"
+clanker ask "Find RDS instances that are publicly accessible"
+
+# IAM issues
+clanker ask "Show me IAM users without MFA"
+clanker ask "Find IAM policies with wildcard permissions"
+clanker ask "Show me unused IAM access keys"
+
+# Encryption
+clanker ask "Show me unencrypted EBS volumes"
+clanker ask "Find S3 buckets without encryption"
+clanker ask "List RDS instances without encryption at rest"
+```
+
+**Example output:**
+
+```markdown
+# Security Group Audit Results
+
+## 🚨 Critical Issues (3 security groups)
+
+### ssh-access-sg (sg-0a1b2c3d4e5f6)
+- **Rule**: Inbound SSH (port 22)
+- **Source**: 0.0.0.0/0 (internet)
+- **Attached to**: 5 EC2 instances (prod-web-1, prod-web-2, dev-test-1, bastion, jenkins)
+- **Risk**: SSH access from anywhere
+- **Recommendation**: Restrict to office IPs or use Systems Manager Session Manager
+
+### mysql-public-sg (sg-9z8y7x6w5v4u3)
+- **Rule**: Inbound MySQL (port 3306)
+- **Source**: 0.0.0.0/0 (internet)
+- **Attached to**: RDS instance prod-db
+- **Risk**: Database exposed to internet
+- **Recommendation**: Remove public access, use VPC peering or VPN
+
+### wide-open-sg (sg-1a2b3c4d5e6f7)
+- **Rule**: All traffic
+- **Source**: 0.0.0.0/0 (internet)
+- **Attached to**: dev-instance-1
+- **Risk**: Complete exposure
+- **Recommendation**: Delete this security group, create specific rules
+
+## Remediation Commands
+
+```bash
+# Restrict SSH to office IP
+clanker ask --maker "update ssh-access-sg to only allow SSH from 203.0.113.0/24"
+
+# Remove MySQL public access
+clanker ask --maker "remove the 0.0.0.0/0 rule from mysql-public-sg"
+
+# Delete dangerous security group
+clanker ask --maker --destroyer "delete wide-open-sg and create a proper security group for dev-instance-1"
+```
+```
+
+## IAM security audit
+
+### Check IAM users
+
+```bash
+# Users without MFA
+clanker ask "Show me IAM users without MFA enabled"
+
+# Inactive users
+clanker ask "Find IAM users who haven't logged in for 90 days"
+
+# Users with console access
+clanker ask "Show me IAM users with console access"
+
+# Access key age
+clanker ask "Find IAM access keys older than 90 days"
+```
+
+### Check IAM roles and policies
+
+```bash
+# Overly permissive policies
+clanker ask "Find IAM policies with Administrator access"
+clanker ask "Show me policies with wildcard (*) resource permissions"
+
+# Cross-account access
+clanker ask "Find IAM roles that allow cross-account access"
+
+# Service roles
+clanker ask "Show me all IAM roles used by Lambda functions"
+clanker ask "Find EC2 instance profiles with excessive permissions"
+```
+
+**IAM audit output:**
+
+```markdown
+# IAM Security Audit
+
+## ⚠️ High Risk IAM Users (4)
+
+### admin-user
+- **Console access**: Yes
+- **MFA**: ❌ No
+- **Last login**: 2 days ago
+- **Policies**: AdministratorAccess
+- **Risk**: Admin without MFA
+- **Action**: Enable MFA immediately
+
+### old-dev-user
+- **Console access**: Yes
+- **MFA**: ✓ Yes
+- **Last login**: 145 days ago
+- **Access keys**: 1 key (created 289 days ago)
+- **Risk**: Inactive account with old credentials
+- **Action**: Disable or delete
+
+### api-service-user
+- **Console access**: No
+- **Access keys**: 2 keys
+  - Key 1: Created 523 days ago (never rotated)
+  - Key 2: Created 45 days ago
+- **Policies**: PowerUserAccess, IAMFullAccess
+- **Risk**: Overly broad permissions, old credentials
+- **Action**: Rotate keys, reduce permissions
+
+## Overly Permissive Policies (2)
+
+### dev-team-policy
+- **Effect**: Allow
+- **Actions**: `*` (all actions)
+- **Resources**: `*` (all resources)
+- **Attached to**: 8 users, 3 roles
+- **Risk**: Unrestricted access
+- **Action**: Create specific policies per service
+
+### lambda-execution-role
+- **Managed policy**: AWSLambdaFullAccess
+- **Inline policy**: 
+  ```json
+  {
+    "Effect": "Allow",
+    "Action": "*",
+    "Resource": "*"
+  }
+  ```
+- **Risk**: Lambda can perform any AWS action
+- **Action**: Apply least privilege (only required permissions)
+```
+
+### Fix IAM issues
+
+```bash
+# Enable MFA (requires manual setup in console)
+clanker ask "How do I enable MFA for admin-user?"
+
+# Rotate access keys
+clanker ask --maker "rotate access keys for api-service-user"
+
+# Delete inactive user
+clanker ask --maker --destroyer "delete IAM user old-dev-user"
+
+# Create restrictive policy
+clanker ask --maker "create an IAM policy that allows S3 read-only access to my-app-bucket"
+```
+
+## Network security
+
+### VPC security audit
+
+```bash
+# Default VPCs
+clanker ask "Show me default VPCs in use"
+
+# VPC flow logs
+clanker ask "Which VPCs don't have flow logs enabled?"
+
+# Network ACLs
+clanker ask "Show me network ACLs with overly permissive rules"
+
+# Route tables
+clanker ask "Find route tables with internet gateway routes"
+```
+
+### Load balancer security
+
+```bash
+# Public load balancers
+clanker ask "Show me internet-facing load balancers"
+
+# SSL/TLS
+clanker ask "Find load balancers using outdated SSL policies"
+clanker ask "Show me load balancers without HTTPS listeners"
+```
+
+## Data security
+
+### S3 bucket security
+
+```bash
+# Public buckets
+clanker ask "Show me S3 buckets with public access"
+clanker ask "Find S3 buckets with public read or write ACLs"
+
+# Encryption
+clanker ask "Show me S3 buckets without default encryption"
+
+# Versioning
+clanker ask "Find S3 buckets without versioning enabled"
+
+# Logging
+clanker ask "Show me S3 buckets without access logging"
+```
+
+**S3 security report:**
+
+```markdown
+# S3 Security Audit
+
+## 🚨 Public Buckets (2)
+
+### legacy-assets
+- **Public access**: Block Public Access = OFF
+- **ACL**: Public Read
+- **Objects**: 1,234 files
+- **Risk**: Data exposure
+- **Action**: Enable Block Public Access, review ACLs
+
+### backup-archive
+- **Public access**: Block Public Access = OFF
+- **Bucket policy**: Allows GetObject from `*`
+- **Objects**: Database backups (67 files)
+- **Risk**: 🚨 CRITICAL - Database backups exposed
+- **Action**: Remove public policy immediately, enable encryption
+
+## Encryption Issues (5 buckets)
+
+### logs-2025, logs-2026, dev-uploads, temp-storage, staging-assets
+- **Encryption**: None
+- **Action**: Enable SSE-S3 or SSE-KMS
+
+## Missing Versioning (8 buckets)
+
+### prod-documents, user-uploads, configs, ...
+- **Versioning**: Disabled
+- **Risk**: No protection against accidental deletion
+- **Action**: Enable versioning
+```
+
+### Fix S3 issues
+
+```bash
+# Block public access
+clanker ask --maker "enable Block Public Access for backup-archive bucket"
+
+# Enable encryption
+clanker ask --maker "enable default encryption for all buckets without encryption"
+
+# Enable versioning
+clanker ask --maker "enable versioning for prod-documents bucket"
+
+# Remove public policy
+clanker ask --maker --destroyer "remove public access policy from backup-archive"
+```
+
+### RDS security
+
+```bash
+# Public accessibility
+clanker ask "Find RDS instances that are publicly accessible"
+
+# Encryption
+clanker ask "Show me RDS instances without encryption at rest"
+
+# Backup
+clanker ask "Find RDS instances with backup retention less than 7 days"
+
+# Multi-AZ
+clanker ask "Show me production RDS instances without Multi-AZ"
+```
+
+## Compliance checks
+
+### Enable AWS Config
+
+```bash
+# Check if Config is enabled
+clanker ask "Is AWS Config enabled in my account?"
+
+# Enable Config
+clanker ask --maker "enable AWS Config with all supported resources"
+```
+
+### CloudTrail audit
+
+```bash
+# Check CloudTrail
+clanker ask "Is CloudTrail enabled in all regions?"
+
+# Recent API calls
+clanker ask "Show me CloudTrail events for IAM changes in the last 24 hours"
+clanker ask "Find CloudTrail events with failed API calls"
+
+# Suspicious activity
+clanker ask "Show me CloudTrail events from unusual IP addresses"
+```
+
+### Secrets management
+
+```bash
+# Find hardcoded secrets
+clanker ask "Show me Lambda functions with environment variables containing 'password' or 'key'"
+
+# Check Secrets Manager usage
+clanker ask "Which applications are using Secrets Manager?"
+
+# Rotate secrets
+clanker ask --maker "rotate the database password in Secrets Manager"
+```
+
+## Container and Kubernetes security
+
+### EKS security
+
+```bash
+# Public endpoints
+clanker k8s ask "Is my EKS cluster endpoint public?"
+
+# Cluster version
+clanker k8s ask "What Kubernetes version am I running?"
+
+# Pod security
+clanker k8s ask "Show me pods running as root"
+clanker k8s ask "Find pods without resource limits"
+
+# Network policies
+clanker k8s ask "Do I have any network policies configured?"
+```
+
+### ECR image scanning
+
+```bash
+# Enable image scanning
+clanker ask --maker "enable image scanning for all ECR repositories"
+
+# Check for vulnerabilities
+clanker ask "Show me ECR images with critical vulnerabilities"
+```
+
+## Automated security scanning
+
+### Daily security check script
+
+```bash
+#!/bin/bash
+# daily-security-scan.sh
+
+REPORT="security-report-$(date +%Y-%m-%d).txt"
+
+echo "Daily Security Scan - $(date)" > $REPORT
+echo "" >> $REPORT
+
+echo "=== Security Groups ===" >> $REPORT
+clanker ask "Show me security groups with 0.0.0.0/0 access" >> $REPORT
+
+echo "" >> $REPORT
+echo "=== IAM Users ===" >> $REPORT
+clanker ask "Show me IAM users without MFA" >> $REPORT
+
+echo "" >> $REPORT  
+echo "=== Public Resources ===" >> $REPORT
+clanker ask "Show me public S3 buckets" >> $REPORT
+clanker ask "Find RDS instances that are publicly accessible" >> $REPORT
+
+echo "" >> $REPORT
+echo "=== Encryption ===" >> $REPORT
+clanker ask "Show me unencrypted EBS volumes" >> $REPORT
+
+# Alert if issues found
+if grep -q "Risk:" $REPORT; then
+  mail -s "Security Issues Detected" security@example.com < $REPORT
+fi
+```
+
+## Compliance reports
+
+### Generate compliance report
+
+```bash
+# Full compliance scan
+clanker ask --compliance "Generate comprehensive compliance report"
+
+# Output is formatted for System Security Plan (SSP)
+```
+
+This generates a detailed services, ports, and protocols table required for government compliance.
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Automate audits" icon="robot">
+    Run security scans daily via cron. Alert on any new issues.
+  </Card>
+  
+  <Card title="Principle of least privilege" icon="key">
+    Review IAM policies monthly. Remove unused permissions.
+  </Card>
+  
+  <Card title="Enable MFA everywhere" icon="shield-check">
+    Require MFA for all IAM users and root account. No exceptions.
+  </Card>
+  
+  <Card title="Encrypt everything" icon="lock">
+    Enable encryption at rest for all data stores (S3, RDS, EBS).
+  </Card>
+</CardGroup>
+
+## Security checklist
+
+<AccordionGroup>
+  <Accordion title="Network security">
+    - [ ] No security groups with 0.0.0.0/0 on sensitive ports
+    - [ ] No public RDS instances
+    - [ ] VPC flow logs enabled
+    - [ ] Load balancers use HTTPS with modern TLS policies
+    - [ ] Network ACLs properly configured
+  </Accordion>
+  
+  <Accordion title="IAM security">
+    - [ ] All users have MFA enabled
+    - [ ] No IAM users with Administrator access
+    - [ ] Access keys rotated every 90 days
+    - [ ] No hardcoded credentials in code
+    - [ ] Service roles use least privilege
+  </Accordion>
+  
+  <Accordion title="Data security">
+    - [ ] All S3 buckets have Block Public Access enabled
+    - [ ] S3 buckets use default encryption
+    - [ ] RDS instances encrypted at rest
+    - [ ] EBS volumes encrypted
+    - [ ] Versioning enabled on critical buckets
+  </Accordion>
+  
+  <Accordion title="Logging and monitoring">
+    - [ ] CloudTrail enabled in all regions
+    - [ ] CloudWatch Logs for all services
+    - [ ] AWS Config enabled
+    - [ ] GuardDuty enabled (threat detection)
+    - [ ] Security Hub enabled (centralized findings)
+  </Accordion>
+  
+  <Accordion title="Kubernetes security">
+    - [ ] EKS cluster endpoint not public
+    - [ ] RBAC enabled and configured
+    - [ ] Network policies defined
+    - [ ] Pod security standards enforced
+    - [ ] Secrets encrypted at rest
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Security best practices" href="/guides/security" icon="shield">
+    Implement comprehensive security controls
+  </Card>
+  
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Monitor for security events and anomalies
+  </Card>
+  
+  <Card title="Multi-environment" href="/guides/multi-environment" icon="network-wired">
+    Isolate dev, staging, and prod for security
+  </Card>
+  
+  <Card title="Creating infrastructure" href="/guides/creating-infrastructure" icon="cloud">
+    Generate secure infrastructure with maker mode
+  </Card>
+</CardGroup>

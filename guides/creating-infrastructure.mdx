@@ -1,0 +1,380 @@
+---
+title: Creating infrastructure
+description: Use Clanker's maker mode to generate and apply infrastructure changes
+---
+
+Clanker's **maker mode** generates executable infrastructure plans from natural language requests. Instead of just querying your infrastructure, you can create, modify, and deploy resources using AI-generated AWS CLI commands.
+
+## How maker mode works
+
+Maker mode uses a two-phase workflow:
+
+1. **Plan generation**: AI analyzes your request and generates a JSON plan with AWS CLI commands
+2. **Plan execution**: Clanker executes the plan with automatic error handling and retries
+
+This approach gives you full control—you can review the plan before applying it, save plans for later, or modify them as needed.
+
+<Steps>
+
+<Step title="Generate your first plan">
+
+Use the `--maker` flag to generate an infrastructure plan:
+
+```bash
+clanker ask --maker "create a small EC2 instance with a security group"
+```
+
+Clanker will analyze your request and output a JSON plan:
+
+```json
+{
+  "version": 1,
+  "createdAt": "2026-03-01T10:30:00Z",
+  "provider": "aws",
+  "question": "create a small EC2 instance with a security group",
+  "summary": "Creates EC2 instance with security group allowing SSH",
+  "commands": [
+    {
+      "args": ["aws", "ec2", "create-security-group", 
+               "--group-name", "my-instance-sg",
+               "--description", "Security group for EC2 instance"],
+      "reason": "Create security group for EC2 instance",
+      "produces": {"SG_ID": "$.GroupId"}
+    },
+    {
+      "args": ["aws", "ec2", "authorize-security-group-ingress",
+               "--group-id", "<SG_ID>",
+               "--protocol", "tcp", "--port", "22",
+               "--cidr", "0.0.0.0/0"],
+      "reason": "Allow SSH access"
+    },
+    {
+      "args": ["aws", "ec2", "run-instances",
+               "--image-id", "ami-0c55b159cbfafe1f0",
+               "--instance-type", "t3.small",
+               "--security-group-ids", "<SG_ID>",
+               "--tag-specifications", "ResourceType=instance,Tags=[{Key=Name,Value=my-instance}]"],
+      "reason": "Launch EC2 instance",
+      "produces": {"INSTANCE_ID": "$.Instances[0].InstanceId"}
+    }
+  ]
+}
+```
+
+<Note>
+Notice the `<SG_ID>` placeholder—Clanker automatically chains outputs from one command as inputs to the next.
+</Note>
+
+</Step>
+
+<Step title="Review and save the plan">
+
+Before applying, save the plan to review it:
+
+```bash
+clanker ask --maker "create a small EC2 instance" > ec2-plan.json
+```
+
+Review the plan:
+- Check that AMI IDs are valid for your region
+- Verify security group rules match your requirements
+- Confirm instance types and sizes
+- Review IAM permissions if creating roles
+
+You can edit the JSON manually if needed, but be careful to maintain valid structure.
+
+</Step>
+
+<Step title="Apply the plan">
+
+Once you're satisfied with the plan, apply it:
+
+```bash
+clanker ask --apply < ec2-plan.json
+```
+
+Clanker will execute each command in order, with automatic:
+- **Placeholder resolution**: Fills in `<SG_ID>`, `<INSTANCE_ID>`, etc. from previous command outputs
+- **Dependency ordering**: Ensures resources are created in the correct sequence
+- **Error handling**: Retries transient failures, handles "already exists" gracefully
+- **Progress updates**: Shows real-time execution status
+
+**Example execution output:**
+
+```
+[maker] executing command 1/3: create-security-group
+[maker] ✓ security group created: sg-0a1b2c3d4e5f6 (SG_ID)
+
+[maker] executing command 2/3: authorize-security-group-ingress  
+[maker] ✓ ingress rule added
+
+[maker] executing command 3/3: run-instances
+[maker] ✓ instance launched: i-0a1b2c3d4e5f6 (INSTANCE_ID)
+
+[maker] plan completed successfully (3/3 commands)
+```
+
+</Step>
+
+<Step title="Create more complex infrastructure">
+
+Maker mode can handle complex multi-resource deployments:
+
+**RDS database with VPC**
+```bash
+clanker ask --maker "create a postgres RDS instance in a private subnet with a bastion host for access" > rds-plan.json
+```
+
+**Lambda with API Gateway**
+```bash
+clanker ask --maker "create a Python Lambda function with an HTTP API Gateway endpoint" > lambda-api-plan.json
+```
+
+**ECS Fargate service**
+```bash
+clanker ask --maker "deploy a containerized web app using ECS Fargate with an application load balancer" > ecs-plan.json
+```
+
+**S3 website with CloudFront**
+```bash
+clanker ask --maker "create an S3 bucket configured for static website hosting with CloudFront CDN" > s3-cdn-plan.json
+```
+
+</Step>
+
+<Step title="Use profiles and regions">
+
+Specify AWS profile and region for plan generation:
+
+```bash
+# Generate plan for specific profile
+clanker ask --maker --profile prod "create an EC2 instance" > prod-ec2.json
+
+# Execute plan with specific profile
+clanker ask --apply --profile prod --plan-file prod-ec2.json
+```
+
+The plan inherits region and account details from your profile configuration.
+
+</Step>
+
+</Steps>
+
+## Advanced features
+
+### Automatic enrichment
+
+Clanker automatically enriches plans with existing infrastructure context:
+
+```bash
+clanker ask --maker "add an EC2 instance to my existing VPC"
+```
+
+Clanker will:
+1. Discover your existing VPC ID
+2. Find appropriate subnets
+3. Generate a plan using those resources
+4. Bind placeholders to actual VPC/subnet IDs
+
+No manual lookup required.
+
+### Error remediation
+
+When execution fails, Clanker can automatically fix common issues:
+
+**IAM propagation delays**
+```
+[maker] error: role cannot be assumed by Lambda (propagation delay)
+[maker] remediation: waiting 10s for IAM propagation...
+[maker] ✓ retry successful
+```
+
+**CIDR conflicts**
+```
+[maker] error: CIDR block 10.0.0.0/16 conflicts with existing VPC
+[maker] remediation: using AI to select alternative CIDR block
+[maker] ✓ retrying with 10.1.0.0/16
+```
+
+**Missing dependencies**
+```
+[maker] error: subnet subnet-xxx does not exist
+[maker] remediation: discovering available subnets...
+[maker] ✓ using subnet-abc123 instead
+```
+
+### Destructive operations
+
+By default, maker mode rejects destructive operations. Use `--destroyer` to allow deletions:
+
+```bash
+# This will fail without --destroyer
+clanker ask --maker "delete the test-db RDS instance"
+
+# Allow destructive operations
+clanker ask --maker --destroyer "delete the test-db RDS instance" > delete-plan.json
+clanker ask --apply --destroyer < delete-plan.json
+```
+
+<Warning>
+Always review plans with `--destroyer` carefully. Deletions are permanent.
+</Warning>
+
+## Multi-cloud support
+
+Maker mode supports multiple cloud providers:
+
+### GCP
+```bash
+# Generate GCP plan
+clanker ask --gcp --maker "create a Cloud Run service" > gcp-plan.json
+
+# Apply GCP plan
+clanker ask --apply --gcp-project my-project < gcp-plan.json
+```
+
+### Azure
+```bash
+# Generate Azure plan
+clanker ask --azure --maker "create a virtual machine" > azure-plan.json
+
+# Apply Azure plan  
+clanker ask --apply --azure-subscription my-sub-id < azure-plan.json
+```
+
+### Cloudflare
+```bash
+# Generate Cloudflare plan
+clanker ask --cloudflare --maker "create a Workers function" > cf-plan.json
+
+# Apply Cloudflare plan
+clanker ask --apply < cf-plan.json
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Review before applying" icon="eye">
+    Always inspect generated plans before execution. Look for unexpected resources, excessive permissions, or incorrect configurations.
+  </Card>
+  
+  <Card title="Use version control" icon="code-branch">
+    Store your plans in Git. This provides an audit trail and makes it easy to recreate environments.
+  </Card>
+  
+  <Card title="Start small" icon="seedling">
+    Begin with simple resources (security groups, S3 buckets) before tackling complex multi-tier architectures.
+  </Card>
+  
+  <Card title="Test in dev first" icon="flask">
+    Apply plans to development environments before production. Use `--profile dev` to target specific accounts.
+  </Card>
+</CardGroup>
+
+## Example workflows
+
+### Complete web application
+
+```bash
+# 1. Generate complete infrastructure plan
+clanker ask --maker "create a complete web application infrastructure with:
+- VPC with public and private subnets
+- Application Load Balancer
+- ECS Fargate cluster
+- RDS PostgreSQL database in private subnet
+- ElastiCache Redis cluster
+- S3 bucket for static assets
+- CloudFront distribution
+- Route53 DNS record" > webapp-infra.json
+
+# 2. Review the plan
+cat webapp-infra.json | jq '.commands[] | .reason'
+
+# 3. Apply to staging
+clanker ask --apply --profile staging --plan-file webapp-infra.json
+
+# 4. After testing, apply to production
+clanker ask --apply --profile prod --plan-file webapp-infra.json
+```
+
+### Disaster recovery
+
+```bash
+# 1. Generate plan to recreate a failed instance
+clanker ask --maker "recreate the api-server instance with the same configuration"
+
+# 2. Apply immediately
+clanker ask --maker --apply "recreate the api-server instance"
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Plan generation fails">
+    If plan generation fails:
+    
+    ```bash
+    # Use debug mode to see the LLM interaction
+    clanker ask --maker --debug "create an EC2 instance"
+    ```
+    
+    Common issues:
+    - Request is too vague (be specific about instance types, regions, etc.)
+    - AI quota exceeded (try a different provider with `--ai-profile`)
+    - Invalid resource combinations (e.g., incompatible instance types)
+  </Accordion>
+  
+  <Accordion title="Execution fails midway">
+    If a plan fails during execution:
+    
+    - Clanker checkpoints progress—already created resources remain
+    - Review error messages for the failed command
+    - Fix the issue (e.g., add missing permissions)
+    - Re-run `--apply` with the same plan (idempotent)
+    
+    Example:
+    ```bash
+    # Failed due to missing IAM permissions
+    [maker] error: User is not authorized to perform ec2:CreateSecurityGroup
+    
+    # Add permissions, then re-run
+    clanker ask --apply < plan.json
+    # Clanker skips already-created resources
+    ```
+  </Accordion>
+  
+  <Accordion title="Placeholder not resolved">
+    If you see unresolved placeholders like `<VPC_ID>` in execution:
+    
+    - Check that the producing command succeeded
+    - Verify the JSONPath in `produces` is correct
+    - Use `--debug` to see placeholder resolution
+    
+    Manual resolution:
+    ```bash
+    # Edit plan to replace placeholder with actual value
+    sed 's/<VPC_ID>/vpc-0a1b2c3d4e5f6/g' plan.json > plan-fixed.json
+    clanker ask --apply < plan-fixed.json
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Kubernetes setup" href="/guides/kubernetes-setup" icon="dharmachakra">
+    Create and manage Kubernetes clusters
+  </Card>
+  
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Use maker mode to implement cost-saving changes
+  </Card>
+  
+  <Card title="Security best practices" href="/guides/security" icon="shield">
+    Generate secure infrastructure configurations
+  </Card>
+  
+  <Card title="Multi-environment" href="/guides/multi-environment" icon="network-wired">
+    Manage dev, staging, and production with profiles
+  </Card>
+</CardGroup>

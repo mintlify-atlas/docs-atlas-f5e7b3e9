@@ -1,0 +1,364 @@
+---
+title: Microsoft Azure
+description: Manage and query your Azure infrastructure using Clanker CLI
+---
+
+Clanker CLI provides seamless integration with Microsoft Azure, enabling you to query resources, manage infrastructure, and interact with Azure services using natural language or direct commands.
+
+## Authentication
+
+Clanker CLI uses the `az` CLI for all Azure operations. You must be authenticated with Azure CLI before using Clanker.
+
+### Login to Azure
+
+```bash
+az login
+```
+
+### Subscription configuration
+
+Configure your Azure subscription ID in one of the following ways:
+
+```yaml .clanker.yaml
+infra:
+  azure:
+    subscription_id: "your-subscription-id"
+```
+
+Or set via environment variables:
+
+```bash
+export AZURE_SUBSCRIPTION_ID="your-subscription-id"
+export AZ_SUBSCRIPTION_ID="your-subscription-id"
+```
+
+<Note>
+  Clanker resolves the subscription ID in this order:
+  1. Configuration file (`infra.azure.subscription_id`)
+  2. `AZURE_SUBSCRIPTION_ID` environment variable
+  3. `AZ_SUBSCRIPTION_ID` environment variable
+</Note>
+
+## Service principal authentication
+
+When using backend-provided credentials, you can authenticate using a service principal:
+
+```go
+creds := &azure.BackendAzureCredentials{
+    SubscriptionID: "subscription-id",
+    TenantID:       "tenant-id",
+    ClientID:       "client-id",
+    ClientSecret:   "client-secret",
+}
+
+client, err := azure.NewClientWithCredentials(creds, debug)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+From `internal/azure/client.go:51`:
+
+```go
+// NewClientWithCredentials creates a new Azure client using credentials from the backend.
+// If service principal credentials are provided (TenantID, ClientID, ClientSecret),
+// it performs az login with the service principal.
+func NewClientWithCredentials(creds *BackendAzureCredentials, debug bool) (*Client, error)
+```
+
+## Querying infrastructure
+
+### Natural language queries
+
+Ask questions about your Azure infrastructure using natural language:
+
+```bash
+clanker ask "what app services are deployed?"
+clanker ask "list all virtual machines"
+clanker ask "show me AKS clusters"
+```
+
+### Context gathering
+
+Clanker automatically gathers relevant Azure context based on your query:
+
+<CodeGroup>
+```bash Specific resource query
+# Only fetches App Services data
+clanker ask "how many app services do I have?"
+```
+
+```bash General query
+# Fetches account info and resource groups
+clanker ask "what's in my subscription?"
+```
+</CodeGroup>
+
+### Supported resource types
+
+Clanker can query these Azure resources:
+
+<AccordionGroup>
+  <Accordion title="Compute">
+    - Virtual Machines (VMs)
+    - AKS (Azure Kubernetes Service) clusters
+    - App Services (Web Apps)
+    - Function Apps
+  </Accordion>
+
+  <Accordion title="Storage & Data">
+    - Storage Accounts
+    - Cosmos DB accounts
+    - Key Vaults
+  </Accordion>
+
+  <Accordion title="Networking">
+    - Virtual Networks (VNets)
+    - Network Security Groups (NSGs)
+    - Public IP addresses
+    - Load Balancers
+  </Accordion>
+
+  <Accordion title="Management">
+    - Resource Groups
+    - Azure Account information
+    - All ARM resources
+  </Accordion>
+</AccordionGroup>
+
+## Direct commands
+
+Use the `clanker azure list` command to query resources directly:
+
+```bash
+# List all resource groups
+clanker azure list groups
+
+# List virtual machines with detailed info
+clanker azure list vms
+
+# List AKS clusters
+clanker azure list aks
+
+# List storage accounts
+clanker azure list storage
+```
+
+### Available list commands
+
+<CardGroup cols={2}>
+  <Card title="Account & Groups" icon="building">
+    - `account` - Current account context
+    - `groups` / `rg` - Resource groups
+    - `resources` - All ARM resources (top 200)
+  </Card>
+
+  <Card title="Compute" icon="server">
+    - `vms` - Virtual machines
+    - `aks` - AKS clusters
+  </Card>
+
+  <Card title="App Services" icon="window">
+    - `webapps` - App Services
+    - `functionapps` - Function Apps
+  </Card>
+
+  <Card title="Storage & Security" icon="database">
+    - `storage` - Storage accounts
+    - `keyvaults` - Key Vaults
+    - `cosmosdb` - Cosmos DB
+  </Card>
+
+  <Card title="Networking" icon="network-wired">
+    - `vnets` - Virtual networks
+    - `nsgs` - Network security groups
+    - `public-ips` - Public IPs
+    - `load-balancers` / `lbs` - Load balancers
+  </Card>
+</CardGroup>
+
+### Command options
+
+```bash
+# Use a different subscription
+clanker azure list vms --subscription "other-subscription-id"
+
+# List all resources in subscription
+clanker azure list resources
+```
+
+## Error handling
+
+Clanker provides intelligent error hints for Azure operations:
+
+<CodeGroup>
+```bash Authentication error
+# Error: az login required
+# (hint: run az login)
+```
+
+```bash Permission error
+# Error: insufficient permissions
+# (hint: missing RBAC permissions on the subscription/resource group)
+```
+
+```bash Subscription error
+# Error: subscription not found
+# (hint: subscription id may be incorrect)
+```
+</CodeGroup>
+
+### Retry mechanism
+
+Clanker automatically retries failed `az` commands with exponential backoff for:
+
+- Rate limiting (429 errors)
+- Timeout errors
+- Too many requests
+- Temporarily unavailable services
+
+Retries occur at 200ms, 500ms, and 1200ms intervals.
+
+## Implementation details
+
+### Client initialization
+
+From `internal/azure/client.go:33`:
+
+```go
+func NewClient(subscriptionID string, debug bool) (*Client, error) {
+    if strings.TrimSpace(subscriptionID) == "" {
+        return nil, fmt.Errorf("azure subscription_id is required")
+    }
+    return &Client{subscriptionID: strings.TrimSpace(subscriptionID), debug: debug}, nil
+}
+```
+
+### Command execution
+
+All Azure operations use the `execAz` method which:
+
+1. Verifies `az` CLI is installed
+2. Appends the subscription ID and `--only-show-errors` flag
+3. Implements retry logic for transient failures
+4. Provides contextual error hints
+
+From `internal/azure/client.go:90`:
+
+```go
+func (c *Client) execAz(ctx context.Context, args ...string) (string, error) {
+    if _, err := exec.LookPath("az"); err != nil {
+        return "", fmt.Errorf("az not found in PATH")
+    }
+    if c.subscriptionID != "" && !hasFlag(args, "--subscription") {
+        args = append(args, "--subscription", c.subscriptionID)
+    }
+    // ... retry logic ...
+}
+```
+
+### Context gathering
+
+When you ask questions, Clanker gathers context from relevant Azure resources. Default sections include:
+
+- Azure Account details
+- Resource Groups
+
+Query-specific sections are added based on keywords in your question.
+
+From `internal/azure/client.go:167`:
+
+```go
+func (c *Client) GetRelevantContext(ctx context.Context, question string) (string, error) {
+    // Analyzes question and fetches relevant Azure resources
+    // Returns formatted context for LLM
+}
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Set default subscription" icon="gear">
+    Configure your subscription ID in `.clanker.yaml` to avoid specifying it on every command.
+  </Card>
+
+  <Card title="Use RBAC properly" icon="shield">
+    Ensure your account or service principal has Reader permissions on resources you want to query.
+  </Card>
+
+  <Card title="Specific queries" icon="crosshairs">
+    Ask about specific resources to get faster results instead of broad queries.
+  </Card>
+
+  <Card title="Service principals for automation" icon="robot">
+    Use service principals with minimal required permissions for automated workflows.
+  </Card>
+</CardGroup>
+
+## Examples
+
+### List virtual machines
+
+```bash
+clanker azure list vms
+```
+
+Output:
+```
+Name          ResourceGroup    Location    PowerState
+web-vm-1      production-rg    eastus      VM running
+api-vm-1      production-rg    westus2     VM running
+```
+
+### Query App Services
+
+```bash
+clanker ask "show me all app services in production"
+```
+
+### Check AKS clusters
+
+```bash
+clanker azure list aks
+```
+
+Output:
+```
+Name              ResourceGroup    Location    KubernetesVersion
+prod-aks-cluster  k8s-rg           eastus      1.27.7
+```
+
+### List storage accounts
+
+```bash
+clanker azure list storage
+```
+
+Output:
+```
+Name                  ResourceGroup  Location  Kind         AccessTier
+prodstorageacct123    storage-rg     eastus    StorageV2    Hot
+```
+
+### View current account
+
+```bash
+clanker azure list account
+```
+
+Output (JSON):
+```json
+{
+  "name": "Production Subscription",
+  "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "state": "Enabled",
+  "user": {
+    "name": "user@example.com",
+    "type": "user"
+  }
+}
+```
+
+<Check>
+  Azure integration requires the `az` CLI to be installed and authenticated. Run `az login` before using Clanker with Azure.
+</Check>

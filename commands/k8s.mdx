@@ -1,0 +1,440 @@
+---
+title: clanker k8s
+description: Manage Kubernetes clusters and query workloads
+---
+
+The `k8s` command provides comprehensive Kubernetes cluster management and natural language querying capabilities for EKS, GKE, and kubeadm clusters.
+
+## Usage
+
+```bash
+clanker k8s [subcommand] [flags]
+```
+
+## Subcommands
+
+### Create commands
+
+<CodeGroup>
+```bash EKS
+# Create an EKS cluster
+clanker k8s create eks my-cluster --nodes 2 --node-type t3.small
+
+# Show plan only (don't create)
+clanker k8s create eks my-cluster --plan
+```
+
+```bash GKE
+# Create a GKE cluster
+clanker k8s create gke my-cluster \
+  --gcp-project my-project \
+  --nodes 2 \
+  --node-type e2-standard-2
+
+# Create with preemptible nodes
+clanker k8s create gke my-cluster \
+  --gcp-project my-project \
+  --preemptible
+```
+
+```bash kubeadm
+# Create a kubeadm cluster on EC2
+clanker k8s create kubeadm my-cluster \
+  --workers 1 \
+  --key-pair my-key
+
+# Show plan with SSH details
+clanker k8s create kubeadm my-cluster --plan
+```
+</CodeGroup>
+
+### Management commands
+
+<CodeGroup>
+```bash List
+# List EKS clusters
+clanker k8s list eks
+
+# List GKE clusters
+clanker k8s list gke --gcp-project my-project
+
+# List kubeadm clusters
+clanker k8s list kubeadm
+```
+
+```bash Delete
+# Delete an EKS cluster
+clanker k8s delete eks my-cluster
+
+# Delete a GKE cluster
+clanker k8s delete gke my-cluster --gcp-project my-project
+
+# Delete a kubeadm cluster
+clanker k8s delete kubeadm my-cluster
+```
+
+```bash Kubeconfig
+# Get kubeconfig for EKS
+clanker k8s kubeconfig eks my-cluster
+
+# Get kubeconfig for GKE
+clanker k8s kubeconfig gke my-cluster --gcp-project my-project
+
+# Get kubeconfig for kubeadm
+clanker k8s kubeconfig kubeadm my-cluster
+```
+</CodeGroup>
+
+### Deployment commands
+
+```bash
+# Deploy an application
+clanker k8s deploy nginx --name my-nginx --port 80
+
+# Deploy with replicas
+clanker k8s deploy redis --replicas 3 --namespace cache
+
+# Show deployment plan
+clanker k8s deploy postgres --plan
+```
+
+### Resource commands
+
+```bash
+# Get all resources from a cluster
+clanker k8s resources --cluster my-cluster
+
+# Output as YAML
+clanker k8s resources --cluster my-cluster --output yaml
+
+# Get resources from all clusters
+clanker k8s resources
+```
+
+### Logs commands
+
+```bash
+# Get pod logs
+clanker k8s logs my-pod
+
+# Get logs from specific container
+clanker k8s logs my-pod -c my-container
+
+# Follow logs
+clanker k8s logs my-pod -f
+
+# Get last 100 lines
+clanker k8s logs my-pod --tail 100
+
+# Include timestamps
+clanker k8s logs my-pod --timestamps
+```
+
+### Stats commands
+
+```bash
+# Get node metrics
+clanker k8s stats nodes
+
+# Get pod metrics
+clanker k8s stats pods -n kube-system
+
+# Get metrics for all namespaces
+clanker k8s stats pods -A
+
+# Get pod metrics sorted by memory
+clanker k8s stats pods --sort-by memory
+
+# Get specific pod metrics
+clanker k8s stats pod my-pod
+
+# Get cluster-wide metrics
+clanker k8s stats cluster
+```
+
+### Ask command
+
+```bash
+# Ask natural language questions
+clanker k8s ask "how many pods are running"
+
+clanker k8s ask --cluster test-cluster \
+  "show me all deployments"
+
+clanker k8s ask --gcp \
+  --gcp-project my-project \
+  --cluster my-gke-cluster \
+  "show me all pods"
+
+clanker k8s ask "which pods are using the most memory"
+
+clanker k8s ask "why is my pod crashing"
+```
+
+## Create EKS flags
+
+<ParamField path="--nodes" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="t3.small">
+  EC2 instance type for nodes
+</ParamField>
+
+<ParamField path="--version" type="string" default="1.29">
+  Kubernetes version
+</ParamField>
+
+<ParamField path="--plan" type="boolean" default="false">
+  Show plan without applying
+</ParamField>
+
+<ParamField path="--apply" type="boolean" default="false">
+  Apply the plan (default prompts for confirmation)
+</ParamField>
+
+## Create GKE flags
+
+<ParamField path="--gcp-project" type="string" required>
+  GCP project ID
+</ParamField>
+
+<ParamField path="--gcp-region" type="string" default="us-central1">
+  GCP region for the cluster
+</ParamField>
+
+<ParamField path="--nodes" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="e2-standard-2">
+  GCE machine type for nodes
+</ParamField>
+
+<ParamField path="--version" type="string">
+  Kubernetes version (default: GKE default)
+</ParamField>
+
+<ParamField path="--preemptible" type="boolean" default="false">
+  Use preemptible VMs for nodes
+</ParamField>
+
+<ParamField path="--plan" type="boolean" default="false">
+  Show plan without applying
+</ParamField>
+
+<ParamField path="--apply" type="boolean" default="false">
+  Apply the plan
+</ParamField>
+
+## Create kubeadm flags
+
+<ParamField path="--workers" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="t3.small">
+  EC2 instance type for nodes
+</ParamField>
+
+<ParamField path="--key-pair" type="string">
+  AWS key pair name for SSH access (auto-creates if not exists)
+</ParamField>
+
+<ParamField path="--ssh-key" type="string">
+  Path to SSH private key (default: `~/.ssh/<key-pair>`)
+</ParamField>
+
+<ParamField path="--version" type="string" default="1.29">
+  Kubernetes version
+</ParamField>
+
+<ParamField path="--plan" type="boolean" default="false">
+  Show plan without applying
+</ParamField>
+
+<ParamField path="--apply" type="boolean" default="false">
+  Apply the plan
+</ParamField>
+
+## Deploy flags
+
+<ParamField path="--name" type="string">
+  Deployment name (default: image name)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="80">
+  Container port to expose
+</ParamField>
+
+<ParamField path="--replicas" type="integer" default="1">
+  Number of replicas
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="default">
+  Kubernetes namespace
+</ParamField>
+
+<ParamField path="--plan" type="boolean" default="false">
+  Show plan without applying
+</ParamField>
+
+<ParamField path="--apply" type="boolean" default="false">
+  Apply the plan
+</ParamField>
+
+## Resources flags
+
+<ParamField path="--cluster" type="string">
+  Cluster name (optional, uses current context if not specified)
+</ParamField>
+
+<ParamField path="--output" type="string" default="json">
+  Output format (`json` or `yaml`)
+</ParamField>
+
+## Logs flags
+
+<ParamField path="--container" type="string">
+  Container name
+</ParamField>
+
+<ParamField path="--follow" type="boolean" default="false">
+  Follow log output
+</ParamField>
+
+<ParamField path="--previous" type="boolean" default="false">
+  Get logs from previous terminated container
+</ParamField>
+
+<ParamField path="--tail" type="integer" default="100">
+  Number of lines from end of logs
+</ParamField>
+
+<ParamField path="--since" type="string">
+  Show logs since duration (e.g., `1h`, `30m`)
+</ParamField>
+
+<ParamField path="--timestamps" type="boolean" default="false">
+  Include timestamps in output
+</ParamField>
+
+<ParamField path="--all-containers" type="boolean" default="false">
+  Get logs from all containers in pod
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="default">
+  Namespace
+</ParamField>
+
+## Stats flags
+
+<ParamField path="--sort-by" type="string">
+  Sort by `cpu` or `memory`
+</ParamField>
+
+<ParamField path="--output" type="string" default="table">
+  Output format (`table`, `json`, or `yaml`)
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="default">
+  Namespace for pod metrics
+</ParamField>
+
+<ParamField path="--all-namespaces" type="boolean" default="false">
+  Get metrics from all namespaces
+</ParamField>
+
+<ParamField path="--containers" type="boolean" default="false">
+  Show container-level metrics for pod
+</ParamField>
+
+## Ask flags
+
+<ParamField path="--cluster" type="string">
+  Kubernetes cluster name (EKS or GKE cluster name)
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  AWS profile for EKS clusters
+</ParamField>
+
+<ParamField path="--kubeconfig" type="string">
+  Path to kubeconfig file (default: `~/.kube/config`)
+</ParamField>
+
+<ParamField path="--context" type="string">
+  kubectl context to use (overrides `--cluster`)
+</ParamField>
+
+<ParamField path="--namespace" type="string">
+  Default namespace for queries (default: all namespaces)
+</ParamField>
+
+<ParamField path="--ai-profile" type="string">
+  AI profile to use for LLM queries
+</ParamField>
+
+<ParamField path="--debug" type="boolean" default="false">
+  Enable debug output
+</ParamField>
+
+<ParamField path="--gcp" type="boolean" default="false">
+  Use GKE cluster instead of EKS
+</ParamField>
+
+<ParamField path="--gcp-project" type="string">
+  GCP project ID for GKE clusters
+</ParamField>
+
+<ParamField path="--gcp-region" type="string">
+  GCP region for GKE clusters
+</ParamField>
+
+## Examples
+
+### Create and manage EKS cluster
+
+```bash
+# Create cluster
+clanker k8s create eks prod-cluster \
+  --nodes 3 \
+  --node-type t3.medium \
+  --version 1.29
+
+# Deploy application
+clanker k8s deploy nginx --name web-server --port 80
+
+# Get cluster resources
+clanker k8s resources --cluster prod-cluster
+
+# Query with natural language
+clanker k8s ask --cluster prod-cluster "show me all deployments"
+
+# Delete cluster
+clanker k8s delete eks prod-cluster
+```
+
+### Monitor cluster health
+
+```bash
+# Get node metrics
+clanker k8s stats nodes --sort-by memory
+
+# Get pod metrics across all namespaces
+clanker k8s stats pods -A --sort-by cpu
+
+# Get cluster-wide metrics
+clanker k8s stats cluster -o json
+
+# Check specific pod
+clanker k8s stats pod my-app --containers
+
+# Get logs with errors
+clanker k8s logs my-app --tail 500 | grep ERROR
+```
+
+## See also
+
+- [Ask command](/commands/ask) - Natural language queries
+- [Configuration](/commands/config) - Configure cloud credentials

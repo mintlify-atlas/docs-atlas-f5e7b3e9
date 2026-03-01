@@ -1,0 +1,187 @@
+---
+title: AWS integration
+description: Query and manage AWS infrastructure with natural language and AI-powered automation
+---
+
+Clanker integrates deeply with AWS, enabling you to query infrastructure, generate execution plans, and automate cloud operations using natural language commands.
+
+## Core capabilities
+
+Clanker's AWS integration provides three main modes of operation:
+
+<CardGroup cols={2}>
+  <Card title="Ask mode" icon="circle-question" href="/aws/ask-mode">
+    Query your AWS infrastructure with natural language
+  </Card>
+  <Card title="Maker/apply workflow" icon="wand-magic-sparkles" href="/aws/maker-apply">
+    Generate and execute AWS CLI plans for infrastructure changes
+  </Card>
+  <Card title="Service support" icon="aws" href="/aws/services">
+    Comprehensive coverage of 50+ AWS services
+  </Card>
+  <Card title="Static commands" icon="terminal">
+    Direct resource queries without AI interpretation
+  </Card>
+</CardGroup>
+
+## Authentication
+
+Clanker uses AWS CLI credentials and supports multiple authentication methods:
+
+### AWS profile configuration
+
+Configure AWS profiles in `~/.clanker/config.yaml`:
+
+```yaml
+infra:
+  default_provider: aws
+  default_environment: dev
+  aws:
+    environments:
+      dev:
+        profile: dev-profile
+        region: us-east-1
+      prod:
+        profile: prod-profile
+        region: us-west-2
+```
+
+### SSO and temporary credentials
+
+Clanker automatically handles:
+- AWS SSO profiles via `aws configure export-credentials`
+- Temporary credentials with session tokens
+- Profile-specific region resolution
+
+From `~/workspace/source/internal/aws/client.go:94-118`:
+
+```go
+func NewClientWithProfileAndDebug(ctx context.Context, profile string, debug bool) (*Client, error) {
+    // Try to get credentials from AWS CLI first (works better with SSO)
+    creds, err := getCredentialsFromCLI(ctx, profile)
+    if err != nil {
+        // Fallback to standard SDK approach
+        cfg, err := config.LoadDefaultConfig(ctx, config.WithSharedConfigProfile(profile))
+        // ...
+    }
+    // Create AWS config with CLI-provided credentials
+    cfg, err := config.LoadDefaultConfig(ctx,
+        config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+            creds.AccessKeyId,
+            creds.SecretAccessKey,
+            creds.SessionToken,
+        )),
+        config.WithSharedConfigProfile(profile),
+    )
+}
+```
+
+## Quick start examples
+
+### Query EC2 instances
+
+```bash
+clanker ask "What EC2 instances are running?"
+```
+
+### List Lambda functions with errors
+
+```bash
+clanker ask "Show me lambda functions with high error rates" --aws
+```
+
+### Create infrastructure with maker mode
+
+```bash
+# Generate a plan
+clanker ask "Deploy a PostgreSQL RDS instance" --maker > plan.json
+
+# Review and apply
+clanker ask --apply --plan-file plan.json
+```
+
+### Use specific AWS profile
+
+```bash
+clanker ask "List S3 buckets" --profile prod-profile
+```
+
+## AI-powered context gathering
+
+Clanker intelligently determines which AWS services to query based on your question:
+
+```go
+func (c *Client) GetRelevantContext(ctx context.Context, question string) (string, error) {
+    questionLower := strings.ToLower(question)
+    
+    if strings.Contains(questionLower, "ec2") || strings.Contains(questionLower, "instance") {
+        ec2Info, err := c.getEC2Info(ctx)
+        // ...
+    }
+    
+    if strings.Contains(questionLower, "lambda") || strings.Contains(questionLower, "function") {
+        lambdaInfo, err := c.getLambdaInfo(ctx)
+        // ...
+    }
+}
+```
+
+From `~/workspace/source/internal/aws/client.go:198-232`.
+
+## Discovery mode
+
+Enable comprehensive infrastructure discovery:
+
+```bash
+clanker ask "Show me all active AWS services" --discovery
+```
+
+Discovery mode:
+- Checks all AWS services in parallel
+- Returns counts and availability status
+- Identifies active resources across your infrastructure
+
+## Compliance reporting
+
+Generate compliance documentation:
+
+```bash
+clanker ask --compliance
+```
+
+Produces SSP (System Security Plan) reports with:
+- Services, ports, and protocols table
+- Security controls and mitigations
+- External access and risk assessment
+- Professional government security documentation format
+
+<Note>
+Compliance mode automatically enables discovery for comprehensive service coverage.
+</Note>
+
+## Multi-region support
+
+Clanker handles multi-region operations:
+
+```bash
+# Query specific region
+AWS_REGION=us-west-2 clanker ask "List EC2 instances"
+
+# Region-aware maker plans
+clanker ask "Deploy ALB in us-east-1 and us-west-2" --maker
+```
+
+<Warning>
+For destructive operations across regions, Clanker groups commands by region to avoid interleaved deletes.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Ask mode details" icon="circle-question" href="/aws/ask-mode">
+    Learn about querying AWS infrastructure
+  </Card>
+  <Card title="Maker/apply workflow" icon="wand-magic-sparkles" href="/aws/maker-apply">
+    Generate and execute infrastructure plans
+  </Card>
+</CardGroup>

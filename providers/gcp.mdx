@@ -1,0 +1,351 @@
+---
+title: Google Cloud Platform (GCP)
+description: Manage and query your Google Cloud infrastructure using Clanker CLI
+---
+
+Clanker CLI provides comprehensive integration with Google Cloud Platform, allowing you to query infrastructure, manage resources, and interact with GCP services using natural language or direct commands.
+
+## Authentication
+
+Clanker CLI uses the `gcloud` CLI for all GCP operations. You must be authenticated with `gcloud` before using Clanker.
+
+### Project configuration
+
+Configure your GCP project ID in one of the following ways:
+
+```yaml .clanker.yaml
+infra:
+  gcp:
+    project_id: "my-project-id"
+```
+
+Or set via environment variables:
+
+```bash
+export GCP_PROJECT="my-project-id"
+export GOOGLE_CLOUD_PROJECT="my-project-id"
+export GCLOUD_PROJECT="my-project-id"
+```
+
+<Note>
+  Clanker resolves the project ID in this order:
+  1. Configuration file (`infra.gcp.project_id`)
+  2. `GCP_PROJECT` environment variable
+  3. `GOOGLE_CLOUD_PROJECT` environment variable
+  4. `GCLOUD_PROJECT` environment variable
+</Note>
+
+## Backend credentials
+
+When using Clanker with backend-provided credentials, you can authenticate using a service account:
+
+```go
+creds := &gcp.BackendGCPCredentials{
+    ProjectID:          "my-project-id",
+    ServiceAccountJSON: "<service-account-json>",
+}
+
+client, tempFile, err := gcp.NewClientWithCredentials(creds, debug)
+if err != nil {
+    log.Fatal(err)
+}
+defer gcp.CleanupCredentialsFile(tempFile)
+```
+
+The service account JSON is written to a temporary file and `GOOGLE_APPLICATION_CREDENTIALS` is automatically set for the session.
+
+## Querying infrastructure
+
+### Natural language queries
+
+Ask questions about your GCP infrastructure using natural language:
+
+```bash
+clanker ask "what cloud run services are running?"
+clanker ask "list all firestore databases"
+clanker ask "show me compute instances in production"
+```
+
+### Context gathering
+
+Clanker automatically gathers relevant GCP context based on your query. When you ask about specific services, it fetches only the data needed to answer your question.
+
+<CodeGroup>
+```bash Query-specific context
+# Only fetches Cloud Run data
+clanker ask "how many cloud run services do I have?"
+```
+
+```bash Default context
+# Fetches common resources when query is general
+clanker ask "what's in my project?"
+```
+</CodeGroup>
+
+### Supported resource types
+
+Clanker can query these GCP resources:
+
+<AccordionGroup>
+  <Accordion title="Compute & Containers">
+    - Compute Engine instances
+    - Instance groups
+    - GKE clusters
+    - Cloud Run services
+    - Cloud Run jobs
+  </Accordion>
+
+  <Accordion title="Storage & Databases">
+    - Cloud Storage buckets
+    - Firestore databases
+    - Cloud SQL instances
+    - BigQuery datasets
+    - Spanner instances
+    - Bigtable instances
+    - Memorystore (Redis)
+    - Memorystore (Memcached)
+  </Accordion>
+
+  <Accordion title="Networking & Security">
+    - VPC networks
+    - Subnets
+    - Firewall rules
+    - Load balancers
+    - Cloud Armor policies
+    - Cloud DNS zones
+  </Accordion>
+
+  <Accordion title="Serverless & Messaging">
+    - Cloud Functions
+    - Cloud Functions Gen2
+    - Pub/Sub topics
+    - Pub/Sub subscriptions
+    - Cloud Tasks queues
+    - Cloud Scheduler jobs
+    - Eventarc triggers
+  </Accordion>
+
+  <Accordion title="DevOps & Identity">
+    - IAM service accounts
+    - IAM roles
+    - Artifact Registry repositories
+    - Cloud Build triggers
+    - Cloud Deploy pipelines
+    - Secret Manager secrets
+    - Cloud KMS keyrings
+  </Accordion>
+
+  <Accordion title="Monitoring & API">
+    - Cloud Logging sinks
+    - Cloud Monitoring alert policies
+    - API Gateway APIs
+    - Firebase apps
+  </Accordion>
+</AccordionGroup>
+
+## Direct commands
+
+Use the `clanker gcp list` command to query resources directly without AI interpretation:
+
+```bash
+# List Cloud Run services
+clanker gcp list cloudrun
+
+# List Compute Engine instances
+clanker gcp list compute
+
+# List all GCS buckets
+clanker gcp list gcs
+
+# List Cloud SQL databases
+clanker gcp list cloudsql
+```
+
+### Available list commands
+
+<CardGroup cols={2}>
+  <Card title="IAM" icon="shield">
+    - `iam` - Service accounts
+    - `iam-roles` - IAM roles
+  </Card>
+
+  <Card title="Compute" icon="server">
+    - `compute` - VM instances
+    - `instance-groups` - Instance groups
+    - `gke` - GKE clusters
+  </Card>
+
+  <Card title="Serverless" icon="bolt">
+    - `cloudrun` - Cloud Run services
+    - `run-jobs` - Cloud Run jobs
+    - `functions` - Cloud Functions
+    - `functions-gen2` - Functions Gen2
+  </Card>
+
+  <Card title="Storage" icon="database">
+    - `gcs` - Cloud Storage buckets
+    - `cloudsql` - Cloud SQL
+    - `firestore` - Firestore
+    - `bigquery` - BigQuery datasets
+    - `spanner` - Spanner
+    - `bigtable` - Bigtable
+  </Card>
+
+  <Card title="Networking" icon="network-wired">
+    - `networks` - VPC networks
+    - `subnets` - Subnets
+    - `firewall` - Firewall rules
+    - `load-balancers` - Load balancers
+    - `dns` - Cloud DNS zones
+  </Card>
+
+  <Card title="Messaging" icon="envelope">
+    - `pubsub` - Pub/Sub topics
+    - `subscriptions` - Subscriptions
+    - `tasks` - Cloud Tasks queues
+    - `scheduler` - Scheduler jobs
+  </Card>
+</CardGroup>
+
+### Advanced list options
+
+Some list commands support additional options:
+
+```bash
+# List resources in a specific project
+clanker gcp list cloudrun --project my-other-project
+
+# List Eventarc triggers in a specific region
+clanker gcp list eventarc-triggers --location us-east4
+
+# List DNS record sets for a specific zone
+clanker gcp list dns-record-sets
+
+# List artifact images in repositories
+clanker gcp list artifact-images
+```
+
+## Error handling
+
+Clanker provides intelligent error hints when operations fail:
+
+<CodeGroup>
+```bash Permission error
+# Error: gcloud command failed: permission denied
+# (hint: missing IAM permissions or project access)
+```
+
+```bash API not enabled
+# Error: API not enabled for this service
+# (hint: enable the API for this service)
+```
+
+```bash Authentication error
+# Error: authentication failed
+# (hint: gcloud auth or ADC may be missing)
+```
+</CodeGroup>
+
+### Retry mechanism
+
+Clanker automatically retries failed `gcloud` commands with exponential backoff for transient errors:
+
+- Rate limiting errors
+- Timeout errors
+- Temporarily unavailable services
+- Resource exhausted errors
+
+Retries occur at 200ms, 500ms, and 1200ms intervals.
+
+## Implementation details
+
+### Client initialization
+
+From `internal/gcp/client.go:36`:
+
+```go
+func NewClient(projectID string, debug bool) (*Client, error) {
+    if strings.TrimSpace(projectID) == "" {
+        return nil, fmt.Errorf("gcp project_id is required")
+    }
+    return &Client{projectID: projectID, debug: debug}, nil
+}
+```
+
+### Command execution
+
+All GCP operations use the `execGcloud` method which:
+
+1. Verifies `gcloud` is installed
+2. Appends the project ID to all commands
+3. Implements retry logic for transient failures
+4. Provides helpful error hints
+
+From `internal/gcp/client.go:99`:
+
+```go
+func (c *Client) execGcloud(ctx context.Context, args ...string) (string, error) {
+    if _, err := exec.LookPath("gcloud"); err != nil {
+        return "", fmt.Errorf("gcloud not found in PATH")
+    }
+    args = append(args, "--project", c.projectID)
+    // ... retry logic ...
+}
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use specific queries" icon="crosshairs">
+    Ask about specific resources to get faster, more focused results instead of broad queries.
+  </Card>
+
+  <Card title="Configure project ID" icon="gear">
+    Set your project ID in `.clanker.yaml` to avoid specifying it on every command.
+  </Card>
+
+  <Card title="Enable required APIs" icon="plug">
+    Ensure the GCP APIs you need are enabled in your project before querying resources.
+  </Card>
+
+  <Card title="Use service accounts" icon="user-lock">
+    For automation, use service accounts with minimal required permissions.
+  </Card>
+</CardGroup>
+
+## Examples
+
+### Query Cloud Run services
+
+```bash
+clanker gcp list cloudrun
+```
+
+Output:
+```
+NAME              REGION       URL
+api-service       us-central1  https://api-service-xxx.run.app
+web-app           us-east1     https://web-app-xxx.run.app
+```
+
+### List Firestore databases
+
+```bash
+clanker ask "show me all firestore databases"
+```
+
+### Check compute instances
+
+```bash
+clanker gcp list compute
+```
+
+Output:
+```
+NAME          ZONE           STATUS   INTERNAL_IP   EXTERNAL_IP
+web-server-1  us-central1-a  RUNNING  10.128.0.2    34.123.45.67
+```
+
+<Check>
+  GCP integration requires the `gcloud` CLI to be installed and authenticated. Make sure you've run `gcloud auth login` before using Clanker.
+</Check>

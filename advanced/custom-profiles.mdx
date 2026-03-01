@@ -1,0 +1,713 @@
+---
+title: Custom profiles
+description: Configure AI providers, models, and parameters for different use cases
+---
+
+Clanker supports multiple AI providers and allows you to create custom profiles for different models, contexts, and preferences. This guide covers provider configuration, model selection, and profile management.
+
+## AI provider configuration
+
+Configure AI providers in `~/.clanker.yaml`:
+
+```yaml .clanker.yaml
+ai:
+  # Default provider for all queries
+  default_provider: gemini-api
+  
+  providers:
+    # Gemini API (recommended)
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+    
+    # OpenAI
+    openai:
+      model: gpt-5
+      api_key: "sk-..."  # or use api_key_env: OPENAI_API_KEY
+    
+    # Anthropic Claude
+    anthropic:
+      model: claude-3-5-sonnet-20241022
+      api_key_env: ANTHROPIC_API_KEY
+    
+    # AWS Bedrock (Claude via AWS)
+    bedrock:
+      aws_profile: bedrock-profile
+      region: us-east-1
+      model: us.anthropic.claude-sonnet-4-20250514-v1:0
+    
+    # DeepSeek
+    deepseek:
+      model: deepseek-chat  # or deepseek-reasoner
+      api_key_env: DEEPSEEK_API_KEY
+    
+    # MiniMax
+    minimax:
+      model: MiniMax-M2.5
+      api_key_env: MINIMAX_API_KEY
+```
+
+See `.clanker.example.yaml:4` for the full example.
+
+## Supported providers
+
+### Gemini (via API)
+
+**Provider name**: `gemini-api`
+
+**Available models**:
+- `gemini-2.5-flash` (recommended, default)
+- `gemini-2.0-flash-exp`
+- `gemini-exp-1206`
+- `gemini-pro`
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+```
+
+**API key setup**:
+
+```bash
+export GEMINI_API_KEY="your-api-key"
+```
+
+Or pass at runtime:
+
+```bash
+clanker ask "test" --gemini-key "your-key"
+```
+
+See `cmd/ask.go:1108` for API key resolution.
+
+### Gemini (via Google Cloud)
+
+**Provider name**: `gemini`
+
+**Authentication**: Uses Application Default Credentials (no API key needed)
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: gemini
+  providers:
+    gemini:
+      model: gemini-2.5-flash
+```
+
+**Setup**:
+
+```bash
+gcloud auth application-default login
+```
+
+### OpenAI
+
+**Provider name**: `openai`
+
+**Available models**:
+- `gpt-5` (latest)
+- `gpt-4.5-turbo`
+- `gpt-4o`
+- `gpt-4-turbo`
+- `gpt-3.5-turbo`
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: openai
+  providers:
+    openai:
+      model: gpt-5
+      api_key: "sk-..."
+      # Or use environment variable:
+      # api_key_env: OPENAI_API_KEY
+```
+
+**API key setup**:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Or pass at runtime:
+
+```bash
+clanker ask "test" --ai-profile openai --openai-key "$OPENAI_API_KEY"
+```
+
+See `cmd/ask.go:1126`.
+
+### Anthropic Claude
+
+**Provider name**: `anthropic`
+
+**Available models**:
+- `claude-3-5-sonnet-20241022` (recommended)
+- `claude-3-opus-20240229`
+- `claude-3-sonnet-20240229`
+- `claude-3-haiku-20240307`
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: anthropic
+  providers:
+    anthropic:
+      model: claude-3-5-sonnet-20241022
+      api_key_env: ANTHROPIC_API_KEY
+```
+
+**API key setup**:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+See `cmd/ask.go:1143`.
+
+### AWS Bedrock
+
+**Provider name**: `bedrock`
+
+**Available models**:
+- `us.anthropic.claude-sonnet-4-20250514-v1:0` (Claude Sonnet 4)
+- `us.anthropic.claude-3-5-sonnet-20241022-v2:0`
+- `anthropic.claude-3-opus-20240229-v1:0`
+- `anthropic.claude-3-sonnet-20240229-v1:0`
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: bedrock
+  providers:
+    bedrock:
+      aws_profile: bedrock-profile  # AWS profile with Bedrock access
+      region: us-east-1
+      model: us.anthropic.claude-sonnet-4-20250514-v1:0
+```
+
+**AWS profile setup**:
+
+Ensure your AWS profile has `bedrock:InvokeModel` permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:*::foundation-model/*"
+    }
+  ]
+}
+```
+
+### DeepSeek
+
+**Provider name**: `deepseek`
+
+**Available models**:
+- `deepseek-chat` (general purpose)
+- `deepseek-reasoner` (advanced reasoning)
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: deepseek
+  providers:
+    deepseek:
+      model: deepseek-chat
+      api_key_env: DEEPSEEK_API_KEY
+```
+
+**API key setup**:
+
+```bash
+export DEEPSEEK_API_KEY="your-key"
+```
+
+See `cmd/ask.go:1162`.
+
+### MiniMax
+
+**Provider name**: `minimax`
+
+**Available models**:
+- `MiniMax-M2.5` (latest)
+- `MiniMax-M2.5-highspeed`
+- `MiniMax-M2.1`
+- `MiniMax-M2.1-highspeed`
+- `MiniMax-M2`
+
+**Configuration**:
+
+```yaml
+ai:
+  default_provider: minimax
+  providers:
+    minimax:
+      model: MiniMax-M2.5
+      api_key_env: MINIMAX_API_KEY
+```
+
+**API key setup**:
+
+```bash
+export MINIMAX_API_KEY="your-key"
+```
+
+See `cmd/ask.go:1180`.
+
+## Using profiles
+
+### Default provider
+
+The `default_provider` is used for all queries unless overridden:
+
+```yaml
+ai:
+  default_provider: gemini-api  # Used by default
+```
+
+```bash
+clanker ask "what ec2 instances are running"  # Uses gemini-api
+```
+
+### Override with flag
+
+Use `--ai-profile` to override the default provider:
+
+```bash
+clanker ask "test" --ai-profile openai
+```
+
+This uses the `openai` provider configuration from your config file.
+
+### Override model
+
+Override the model for a specific provider:
+
+```bash
+# Override OpenAI model
+clanker ask "test" --ai-profile openai --openai-model "gpt-4o"
+
+# Override Gemini model
+clanker ask "test" --ai-profile gemini-api --gemini-model "gemini-exp-1206"
+
+# Override Anthropic model
+clanker ask "test" --ai-profile anthropic --anthropic-model "claude-3-opus-20240229"
+```
+
+See `cmd/ask.go:1235` for model override logic.
+
+### Override API key
+
+Provide API keys at runtime without storing them in config:
+
+```bash
+clanker ask "test" \
+  --ai-profile openai \
+  --openai-key "$OPENAI_API_KEY"
+
+clanker ask "test" \
+  --ai-profile anthropic \
+  --anthropic-key "$ANTHROPIC_API_KEY"
+
+clanker ask "test" \
+  --ai-profile gemini-api \
+  --gemini-key "$GEMINI_API_KEY"
+```
+
+## Profile resolution order
+
+Clanker resolves AI configuration in this order (highest priority first):
+
+1. **Command-line flags**: `--ai-profile`, `--openai-key`, `--openai-model`, etc.
+2. **Config file provider settings**: `ai.providers.<provider>.api_key`, `ai.providers.<provider>.model`
+3. **Environment variables**: `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.
+4. **Config file defaults**: `ai.default_provider`
+5. **Hardcoded fallback**: `openai`
+
+**Example**:
+
+```yaml .clanker.yaml
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+    openai:
+      model: gpt-4o
+      api_key: "sk-..."
+```
+
+```bash
+# Uses gemini-api (default_provider)
+clanker ask "test"
+
+# Uses openai with gpt-4o (from config)
+clanker ask "test" --ai-profile openai
+
+# Uses openai with gpt-5 (flag overrides config)
+clanker ask "test" --ai-profile openai --openai-model gpt-5
+
+# Uses openai with custom key (flag overrides config)
+clanker ask "test" --ai-profile openai --openai-key "$MY_KEY"
+```
+
+## API key resolution
+
+### Gemini API key
+
+Resolution order:
+
+1. `--gemini-key` flag
+2. `ai.providers.gemini-api.api_key` in config
+3. Environment variable from `ai.providers.gemini-api.api_key_env`
+4. `GEMINI_API_KEY` environment variable
+
+```go
+func resolveGeminiAPIKey(flagValue string) string {
+    if flagValue != "" {
+        return flagValue
+    }
+    if key := viper.GetString("ai.providers.gemini-api.api_key"); key != "" {
+        return key
+    }
+    if envName := viper.GetString("ai.providers.gemini-api.api_key_env"); envName != "" {
+        if envVal := os.Getenv(envName); envVal != "" {
+            return envVal
+        }
+    }
+    if envVal := os.Getenv("GEMINI_API_KEY"); envVal != "" {
+        return envVal
+    }
+    return ""
+}
+```
+
+See `cmd/ask.go:1108`.
+
+### OpenAI API key
+
+Resolution order:
+
+1. `--openai-key` flag
+2. `ai.providers.openai.api_key` in config
+3. Environment variable from `ai.providers.openai.api_key_env`
+4. `OPENAI_API_KEY` environment variable
+
+See `cmd/ask.go:1126`.
+
+### Other providers
+
+Similar resolution order applies to:
+- Anthropic (`--anthropic-key`, `ANTHROPIC_API_KEY`)
+- DeepSeek (`--deepseek-key`, `DEEPSEEK_API_KEY`)
+- MiniMax (`--minimax-key`, `MINIMAX_API_KEY`)
+
+## Model override logic
+
+When you provide a model flag, Clanker updates the provider's model setting dynamically:
+
+```go
+func maybeOverrideProviderModel(provider, openaiModel, anthropicModel, geminiModel, deepseekModel, minimaxModel string) {
+    switch provider {
+    case "openai":
+        if strings.TrimSpace(openaiModel) != "" {
+            viper.Set("ai.providers.openai.model", strings.TrimSpace(openaiModel))
+        }
+    case "anthropic":
+        if strings.TrimSpace(anthropicModel) != "" {
+            viper.Set("ai.providers.anthropic.model", strings.TrimSpace(anthropicModel))
+        }
+    // ... other providers
+    }
+}
+```
+
+See `cmd/ask.go:1235`.
+
+## Use cases for custom profiles
+
+<AccordionGroup>
+  <Accordion title="Development vs. production" icon="code-compare">
+    Use different models for dev and prod:
+    
+    ```yaml
+    ai:
+      default_provider: gemini-api  # Fast, cheap for dev
+      providers:
+        gemini-api:
+          model: gemini-2.5-flash
+        openai:
+          model: gpt-5  # More powerful for production
+    ```
+    
+    ```bash
+    # Development
+    clanker ask "quick check"
+    
+    # Production analysis
+    clanker ask "detailed compliance report" --ai-profile openai
+    ```
+  </Accordion>
+  
+  <Accordion title="Cost optimization" icon="dollar-sign">
+    Use cheaper models for simple queries:
+    
+    ```bash
+    # Simple listing (use fast/cheap model)
+    clanker ask "list s3 buckets"
+    
+    # Complex analysis (use powerful model)
+    clanker ask "analyze error patterns and suggest fixes" --ai-profile openai --openai-model gpt-5
+    ```
+  </Accordion>
+  
+  <Accordion title="Privacy and compliance" icon="shield">
+    Use AWS Bedrock for data residency requirements:
+    
+    ```yaml
+    ai:
+      default_provider: bedrock
+      providers:
+        bedrock:
+          aws_profile: production
+          region: us-east-1  # Keep data in US
+          model: us.anthropic.claude-sonnet-4-20250514-v1:0
+    ```
+  </Accordion>
+  
+  <Accordion title="Advanced reasoning" icon="brain">
+    Use specialized models for complex tasks:
+    
+    ```bash
+    # Use DeepSeek Reasoner for complex analysis
+    clanker ask "analyze this distributed system failure and identify root cause" \
+      --ai-profile deepseek \
+      --deepseek-model deepseek-reasoner
+    ```
+  </Accordion>
+  
+  <Accordion title="Multi-tenant environments" icon="users">
+    Different API keys per team:
+    
+    ```bash
+    # Team A
+    clanker ask "test" --ai-profile openai --openai-key "$TEAM_A_KEY"
+    
+    # Team B
+    clanker ask "test" --ai-profile openai --openai-key "$TEAM_B_KEY"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Maker mode profiles
+
+Maker mode (infrastructure plan generation) also respects AI profiles:
+
+```bash
+# Use OpenAI for maker plans
+clanker ask "create a lambda function" \
+  --maker \
+  --ai-profile openai \
+  --openai-model gpt-5
+
+# Use Gemini for maker plans
+clanker ask "create a lambda function" \
+  --maker \
+  --ai-profile gemini-api
+```
+
+See `cmd/ask.go:260` for maker mode AI resolution.
+
+## Debugging profiles
+
+Check which provider and model are being used:
+
+```bash
+clanker ask "test" --debug
+```
+
+**Output**:
+
+```text
+🤖 Creating LLM request with provider: gemini-api, model: gemini-2.5-flash
+📊 Context size: 1,247 tokens
+💬 User prompt size: 18 tokens
+```
+
+See which API key is resolved (keys are masked):
+
+```bash
+clanker ask "test" --ai-profile openai --debug 2>&1 | grep -i "api key"
+```
+
+**Output**:
+
+```text
+Using OpenAI API key: sk-***
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use environment variables" icon="key">
+    Store API keys in environment variables, not config files:
+    
+    ```yaml
+    ai:
+      providers:
+        openai:
+          api_key_env: OPENAI_API_KEY  # Good
+          # api_key: "sk-..."  # Bad (committed to git)
+    ```
+  </Card>
+  
+  <Card title="Set a default provider" icon="star">
+    Configure a default provider to avoid specifying `--ai-profile` every time:
+    
+    ```yaml
+    ai:
+      default_provider: gemini-api
+    ```
+  </Card>
+  
+  <Card title="Use cost-effective models" icon="piggy-bank">
+    Default to cheaper/faster models, override for complex tasks:
+    
+    ```yaml
+    ai:
+      default_provider: gemini-api  # Fast and cheap
+      providers:
+        openai:
+          model: gpt-5  # Available when needed
+    ```
+  </Card>
+  
+  <Card title="Test profiles" icon="vial">
+    Verify provider configuration before relying on it:
+    
+    ```bash
+    clanker ask "test" --ai-profile openai --debug
+    ```
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Provider not found
+
+**Error**:
+
+```text
+failed to get AI response: unknown provider: my-provider
+```
+
+**Solution**:
+
+Ensure the provider is defined in config:
+
+```yaml
+ai:
+  providers:
+    my-provider:  # Must match --ai-profile value
+      model: gpt-5
+      api_key_env: MY_API_KEY
+```
+
+### Missing API key
+
+**Error**:
+
+```text
+API key is required for OpenAI provider
+```
+
+**Solution**:
+
+Set the API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Or pass at runtime:
+
+```bash
+clanker ask "test" --ai-profile openai --openai-key "sk-..."
+```
+
+### Wrong model
+
+**Error**:
+
+```text
+API error: model not found
+```
+
+**Solution**:
+
+Check available models for your provider and update config:
+
+```yaml
+ai:
+  providers:
+    openai:
+      model: gpt-5  # Ensure this model exists
+```
+
+### Bedrock permissions
+
+**Error**:
+
+```text
+AccessDeniedException: User is not authorized to perform: bedrock:InvokeModel
+```
+
+**Solution**:
+
+Add Bedrock permissions to your AWS profile:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "bedrock:InvokeModel",
+  "Resource": "*"
+}
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Config file structure and provider setup
+  </Card>
+  
+  <Card title="Debugging" icon="bug" href="/advanced/debugging">
+    Debug provider and model resolution
+  </Card>
+  
+  <Card title="Ask command" icon="messages-question" href="/commands/ask">
+    CLI flags for AI profiles
+  </Card>
+  
+  <Card title="Maker mode" icon="wand-magic-sparkles" href="/concepts/maker-mode">
+    Infrastructure plan generation
+  </Card>
+</CardGroup>

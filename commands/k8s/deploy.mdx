@@ -1,0 +1,144 @@
+---
+title: clanker k8s deploy
+description: Deploy an application to your Kubernetes cluster
+---
+
+Deploy a containerized application to the current Kubernetes cluster. Creates both a Deployment and a LoadBalancer Service.
+
+## Usage
+
+```bash
+clanker k8s deploy [image] [flags]
+```
+
+## Arguments
+
+<ParamField path="image" type="string" required>
+  Container image to deploy (e.g., nginx, myregistry/myapp:v1.0)
+</ParamField>
+
+## Flags
+
+<ParamField path="--name" type="string">
+  Deployment name (default: extracted from image name)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="80">
+  Container port to expose
+</ParamField>
+
+<ParamField path="--replicas" type="integer" default="1">
+  Number of replicas
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="default">
+  Kubernetes namespace
+</ParamField>
+
+<ParamField path="--plan" type="boolean">
+  Show plan without applying changes
+</ParamField>
+
+<ParamField path="--apply" type="boolean">
+  Apply the plan without confirmation prompt
+</ParamField>
+
+## Examples
+
+### Deploy nginx
+
+```bash
+clanker k8s deploy nginx --name my-nginx --port 80
+```
+
+<CodeGroup>
+```bash Output
+=== Deploy Plan ===
+
+Name:      my-nginx
+Image:     nginx
+Port:      80
+Replicas:  1
+Namespace: default
+Type:      deployment
+
+Do you want to deploy this application? [y/N]: y
+
+[k8s] deploying application...
+deployment.apps/my-nginx created
+service/my-nginx created
+
+=== Deployment Successful ===
+
+Commands:
+  kubectl get pods -n default
+  kubectl get svc my-nginx -n default
+  kubectl logs -f deployment/my-nginx -n default
+```
+</CodeGroup>
+
+### Deploy with multiple replicas
+
+```bash
+clanker k8s deploy myapp:v1.0 --replicas 3 --port 8080
+```
+
+### Show deployment plan
+
+```bash
+clanker k8s deploy nginx --plan
+```
+
+<CodeGroup>
+```bash Output
+=== Deploy Plan ===
+
+Name:      nginx
+Image:     nginx
+Port:      80
+Replicas:  1
+Namespace: default
+Type:      deployment
+
+Plan JSON:
+{
+  "type": "deploy",
+  "title": "Deploy Application",
+  "description": "Deploy nginx to Kubernetes",
+  "resources": [
+    {
+      "type": "deployment",
+      "name": "nginx",
+      "image": "nginx",
+      "port": 80,
+      "replicas": 1
+    },
+    {
+      "type": "service",
+      "name": "nginx",
+      "port": 80,
+      "serviceType": "LoadBalancer"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+### Deploy to specific namespace
+
+```bash
+clanker k8s deploy redis --namespace cache --port 6379
+```
+
+## Generated resources
+
+The deploy command creates the following Kubernetes resources:
+
+1. **Deployment**: Manages the specified number of pod replicas running your container image
+2. **Service**: Exposes your deployment via a LoadBalancer with the specified port
+
+Both resources are created in the specified namespace and use matching labels for pod selection.
+
+<Note>
+The deployment creates a LoadBalancer service by default. On cloud providers like AWS and GCP, this will provision an external load balancer. For local or on-premises clusters, you may need to configure an ingress controller or use a different service type.
+</Note>

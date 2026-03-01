@@ -1,0 +1,177 @@
+---
+title: AWS commands
+description: Direct AWS infrastructure queries and infrastructure-as-code operations
+---
+
+Clanker provides specialized AWS commands for infrastructure management and querying without AI interpretation.
+
+## Command groups
+
+<CardGroup cols={2}>
+  <Card title="aws maker" icon="wand-magic-sparkles" href="/commands/aws/maker">
+    Generate infrastructure change plans for AWS resources
+  </Card>
+  
+  <Card title="aws apply" icon="play" href="/commands/aws/apply">
+    Execute approved infrastructure plans on AWS
+  </Card>
+</CardGroup>
+
+## AWS list command
+
+Query AWS resources directly without AI interpretation:
+
+```bash
+clanker aws list [resource] [flags]
+```
+
+### Supported resources
+
+<AccordionGroup>
+  <Accordion title="Compute">
+    - `ec2`, `instances` - EC2 instances
+    - `ecs`, `clusters` - ECS clusters and services
+    - `batch` - AWS Batch jobs
+    - `asg` - Auto Scaling Groups
+  </Accordion>
+  
+  <Accordion title="Serverless">
+    - `lambda`, `lambdas`, `functions` - Lambda functions
+    - `layers` - Lambda layers
+  </Accordion>
+  
+  <Accordion title="Container">
+    - `ecr`, `repositories` - ECR repositories
+    - `eks` - EKS clusters
+  </Accordion>
+  
+  <Accordion title="Storage">
+    - `s3`, `buckets` - S3 buckets
+    - `ebs`, `volumes` - EBS volumes
+    - `efs` - EFS file systems
+  </Accordion>
+  
+  <Accordion title="Database">
+    - `rds`, `databases` - RDS instances
+    - `rds-clusters` - RDS Aurora clusters
+    - `dynamodb`, `tables` - DynamoDB tables
+  </Accordion>
+  
+  <Accordion title="Networking">
+    - `vpcs` - VPCs
+    - `subnets` - Subnets
+    - `security-groups` - Security groups
+    - `load-balancers`, `elb` - Load balancers
+    - `route-tables` - Route tables
+  </Accordion>
+  
+  <Accordion title="Messaging">
+    - `sqs`, `queues` - SQS queues
+    - `sns`, `topics` - SNS topics
+    - `eventbridge`, `events` - EventBridge rules
+  </Accordion>
+  
+  <Accordion title="Monitoring">
+    - `logs`, `cloudwatch` - CloudWatch log groups
+    - `alarms` - CloudWatch alarms
+  </Accordion>
+  
+  <Accordion title="Security">
+    - `iam-roles` - IAM roles
+    - `iam-groups` - IAM groups
+    - `iam-users` - IAM users
+    - `kms`, `keys` - KMS keys
+    - `certificates`, `acm` - ACM certificates
+    - `secrets` - Secrets Manager secrets
+  </Accordion>
+  
+  <Accordion title="DevOps">
+    - `codebuild` - CodeBuild projects
+    - `codepipeline` - CodePipeline pipelines
+    - `codecommit` - CodeCommit repositories
+  </Accordion>
+  
+  <Accordion title="AI/ML">
+    - `bedrock-models` - Bedrock foundation models
+    - `bedrock-custom` - Bedrock custom models
+    - `bedrock-agents` - Bedrock agents
+    - `bedrock-kb`, `knowledge-bases` - Bedrock knowledge bases
+    - `bedrock-guardrails` - Bedrock guardrails
+    - `sagemaker-endpoints` - SageMaker endpoints
+    - `sagemaker-models` - SageMaker models
+    - `sagemaker-jobs` - SageMaker training jobs
+    - `sagemaker-notebooks` - SageMaker notebook instances
+    - `comprehend-jobs` - Comprehend analysis jobs
+    - `textract-jobs` - Textract analysis jobs
+    - `rekognition-collections` - Rekognition collections
+  </Accordion>
+  
+  <Accordion title="Other">
+    - `api-gateways` - API Gateway APIs
+    - `cloudfront` - CloudFront distributions
+    - `route53` - Route53 hosted zones
+  </Accordion>
+</AccordionGroup>
+
+### Flags
+
+<ParamField path="--profile" type="string">
+  AWS profile to use for the query
+</ParamField>
+
+<ParamField path="--environment" type="string">
+  Environment to use from config (`dev`, `stage`, `prod`)
+</ParamField>
+
+### Examples
+
+```bash
+# List EC2 instances
+clanker aws list ec2
+
+# List Lambda functions with specific profile
+clanker aws list lambda --profile prod
+
+# List S3 buckets in staging environment
+clanker aws list s3 --environment stage
+
+# List RDS instances
+clanker aws list rds
+
+# List EKS clusters
+clanker aws list eks
+```
+
+## Infrastructure as code workflow
+
+Clanker provides a two-step workflow for infrastructure changes:
+
+### 1. Generate plan (maker)
+
+```bash
+# Generate a plan for creating resources
+clanker ask --maker "create an s3 bucket for logs"
+
+# Generate a plan with destructive operations allowed
+clanker ask --maker --destroyer "delete the old test bucket"
+```
+
+Outputs a JSON plan with all AWS CLI commands.
+
+### 2. Review and apply
+
+```bash
+# Apply a plan from stdin
+clanker ask --apply < plan.json
+
+# Apply a plan from file
+clanker ask --apply --plan-file plan.json
+```
+
+Executes all commands in the plan with progress tracking.
+
+## See also
+
+- [AWS maker command](/commands/aws/maker) - Generate infrastructure plans
+- [AWS apply command](/commands/aws/apply) - Execute infrastructure plans
+- [Ask command](/commands/ask) - Natural language infrastructure queries

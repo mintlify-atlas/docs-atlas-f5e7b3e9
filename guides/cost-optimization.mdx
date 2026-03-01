@@ -1,0 +1,591 @@
+---
+title: Cost optimization
+description: Reduce cloud spending and optimize resource utilization
+---
+
+This guide shows you how to use Clanker to identify cost savings opportunities and implement optimizations across your cloud infrastructure.
+
+## Quick cost wins
+
+### Find and eliminate waste
+
+```bash
+# Detect cost anomalies
+clanker cost anomalies
+
+# This will show:
+# - Idle EC2 instances
+# - Unattached EBS volumes
+# - Old snapshots
+# - Unused RDS instances
+# - Underutilized resources
+```
+
+**Example findings:**
+
+```
+========================================
+Cost Anomalies - Potential Savings: $579/month
+========================================
+
+🚨 High Impact:
+
+1. Idle EC2: i-0a1b2c3d4e5f6 (dev-test-1)
+   - Running 24/7 with 0.2% avg CPU
+   - Last login: 14 days ago
+   - Monthly waste: $125
+   - Fix: Stop or terminate
+
+2. Unused RDS: dev-playground-db
+   - No connections in 30 days
+   - Monthly cost: $178
+   - Fix: Take snapshot, delete
+
+3. Unattached EBS: 8 volumes, 1.2 TB
+   - Monthly cost: $120
+   - Fix: Delete unused volumes
+```
+
+### Stop idle resources
+
+```bash
+# Stop idle EC2 instances
+clanker ask --maker "stop EC2 instance i-0a1b2c3d4e5f6"
+clanker ask --apply < plan.json
+
+# Delete unused volumes
+clanker ask --maker --destroyer "delete unattached EBS volumes older than 30 days"
+
+# Delete unused RDS
+clanker ask --maker --destroyer "take final snapshot of dev-playground-db then delete it"
+```
+
+<Tip>
+Run `clanker cost anomalies` weekly and act on findings immediately. Small savings compound quickly.
+</Tip>
+
+## Right-sizing resources
+
+### EC2 instances
+
+**Find oversized instances:**
+
+```bash
+# Check CPU utilization
+clanker ask "Show me EC2 instances with low CPU usage over the last 7 days"
+
+# Example output:
+# prod-app-1 (c5.2xlarge): avg 12% CPU, max 23%
+# api-server (m5.xlarge): avg 8% CPU, max 15%
+```
+
+**Downsize instances:**
+
+```bash
+# Change instance type
+clanker ask --maker "change prod-app-1 from c5.2xlarge to c5.xlarge"
+
+# The plan will:
+# 1. Stop the instance
+# 2. Modify instance type
+# 3. Start the instance
+
+# Review and apply
+clanker ask --apply < plan.json
+```
+
+**Savings calculation:**
+
+```
+c5.2xlarge: $0.34/hour × 730 hours = $248/month
+c5.xlarge:  $0.17/hour × 730 hours = $124/month
+Savings: $124/month per instance
+```
+
+### RDS instances
+
+**Find underutilized databases:**
+
+```bash
+clanker ask "Show me RDS instances with low CPU and connection count"
+
+# staging-db: db.t3.large, avg 5% CPU, max 3 connections
+# dev-db: db.t3.medium, avg 3% CPU, max 1 connection
+```
+
+**Downsize RDS:**
+
+```bash
+# Create snapshot first (safety)
+clanker ask --maker "create snapshot of staging-db"
+
+# Modify instance class
+clanker ask --maker "change staging-db from db.t3.large to db.t3.small"
+
+# Apply immediately or during maintenance window
+clanker ask --apply < plan.json
+```
+
+**Savings:**
+
+```
+db.t3.large: $0.136/hour × 730 hours = $99.28/month
+db.t3.small: $0.034/hour × 730 hours = $24.82/month
+Savings: $74.46/month
+```
+
+### Lambda functions
+
+**Optimize memory allocation:**
+
+```bash
+# Check memory usage
+clanker ask "Show me Lambda functions with max memory usage vs. allocated"
+
+# Example:
+# image-processor: allocated 1024 MB, max used 567 MB
+# api-handler: allocated 512 MB, max used 128 MB
+```
+
+**Right-size Lambda memory:**
+
+```bash
+# Reduce memory (also reduces CPU)
+clanker ask --maker "change image-processor memory from 1024 MB to 768 MB"
+clanker ask --maker "change api-handler memory from 512 MB to 256 MB"
+
+clanker ask --apply < plan.json
+```
+
+<Note>
+Lambda pricing is based on GB-seconds. Reducing memory reduces cost, but may increase duration. Test to find the optimal balance.
+</Note>
+
+## Storage optimization
+
+### S3 lifecycle policies
+
+**Move old data to cheaper storage:**
+
+```bash
+# Create lifecycle policy
+clanker ask --maker "create S3 lifecycle policy for logs-archive bucket:
+- Move to Intelligent-Tiering after 30 days
+- Move to Glacier after 90 days
+- Delete after 365 days"
+
+clanker ask --apply < plan.json
+```
+
+**Savings example:**
+
+```
+S3 Standard:            $0.023/GB/month
+S3 Intelligent-Tiering: $0.0125/GB/month (infrequent access)
+S3 Glacier:             $0.004/GB/month
+
+For 1 TB of old logs:
+Before: $23/month
+After:  $4/month (Glacier)
+Savings: $19/month = $228/year
+```
+
+### EBS volume optimization
+
+**Convert gp2 to gp3:**
+
+```bash
+# gp3 is 20% cheaper than gp2 with same performance
+clanker ask "Show me gp2 EBS volumes"
+
+# Convert to gp3
+clanker ask --maker "convert all gp2 volumes to gp3"
+```
+
+**Savings:**
+
+```
+gp2: $0.10/GB/month
+gp3: $0.08/GB/month
+
+For 500 GB:
+Savings: $10/month = $120/year
+```
+
+**Delete old snapshots:**
+
+```bash
+# Find old snapshots
+clanker ask "Show me EBS snapshots older than 90 days"
+
+# Delete (after verifying they're not needed)
+clanker ask --maker --destroyer "delete EBS snapshots older than 90 days for terminated instances"
+```
+
+## Reserved Instances and Savings Plans
+
+### Analyze usage for commitments
+
+```bash
+# Find steady-state workloads
+clanker ask "Show me EC2 instances running 24/7 for the last 30 days"
+
+# Check RDS uptime
+clanker ask "Show me RDS instances with high uptime"
+```
+
+**Reserved Instance savings:**
+
+```
+On-Demand c5.xlarge: $0.17/hour
+1-year RI (no upfront): $0.112/hour (34% savings)
+3-year RI (all upfront): $0.091/hour (46% savings)
+
+For 3 instances running 24/7:
+On-Demand: $3,733/year
+1-year RI: $2,461/year
+Savings: $1,272/year (34%)
+```
+
+<Tip>
+Use AWS Cost Explorer RI recommendations or Compute Optimizer to identify the best RI purchases.
+</Tip>
+
+## Kubernetes cost optimization
+
+### Right-size pods
+
+```bash
+# Check pod resource usage
+clanker k8s stats pods -A --sort-by memory
+
+# Find pods using much less than requested
+clanker k8s ask "show me pods using less than 50% of requested CPU or memory"
+```
+
+**Adjust pod resources:**
+
+```bash
+# Reduce requests and limits
+kubectl set resources deployment my-app \
+  --requests=cpu=100m,memory=256Mi \
+  --limits=cpu=500m,memory=512Mi
+
+# Or use VPA (Vertical Pod Autoscaler)
+kubectl apply -f - <<EOF
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: my-app-vpa
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  updatePolicy:
+    updateMode: "Auto"
+EOF
+```
+
+### Cluster autoscaling
+
+**Enable cluster autoscaler:**
+
+```bash
+# EKS cluster autoscaler
+helm install cluster-autoscaler autoscaler/cluster-autoscaler \
+  --set autoDiscovery.clusterName=my-cluster \
+  --set awsRegion=us-east-1
+
+# Scale down to 0 during off-hours (dev clusters)
+kubectl scale deployment my-app --replicas=0
+
+# Use CronJobs to automate
+kubectl create cronjob scale-down \
+  --schedule="0 18 * * 1-5" \
+  --image=bitnami/kubectl \
+  -- kubectl scale deployment my-app --replicas=0
+
+kubectl create cronjob scale-up \
+  --schedule="0 8 * * 1-5" \
+  --image=bitnami/kubectl \
+  -- kubectl scale deployment my-app --replicas=3
+```
+
+### Use spot instances for worker nodes
+
+```bash
+# Add spot node group to EKS
+clanker ask --maker "add spot instance node group to my-cluster with:
+- Instance types: t3.medium, t3.large
+- Min: 1, Max: 10, Desired: 2
+- Spot allocation strategy: lowest-price"
+
+# Savings: 60-90% compared to on-demand
+```
+
+**Label workloads for spot:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batch-processor
+spec:
+  template:
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: spot
+      tolerations:
+      - key: "spot"
+        operator: "Exists"
+        effect: "NoSchedule"
+```
+
+## Automation and scheduling
+
+### Stop resources during off-hours
+
+**Development environments:**
+
+```bash
+#!/bin/bash
+# stop-dev-resources.sh (run at 6pm weekdays)
+
+# Stop EC2 instances with Environment=dev tag
+for instance in $(aws ec2 describe-instances \
+  --filters "Name=tag:Environment,Values=dev" \
+  --query "Reservations[].Instances[].InstanceId" \
+  --output text); do
+  aws ec2 stop-instances --instance-ids $instance
+  echo "Stopped $instance"
+done
+
+# Stop RDS instances
+for db in $(aws rds describe-db-instances \
+  --query "DBInstances[?TagList[?Key=='Environment' && Value=='dev']].DBInstanceIdentifier" \
+  --output text); do
+  aws rds stop-db-instance --db-instance-identifier $db
+  echo "Stopped $db"
+done
+
+echo "Dev resources stopped. Savings: ~$200/night"
+```
+
+**Start resources in the morning:**
+
+```bash
+#!/bin/bash
+# start-dev-resources.sh (run at 8am weekdays)
+
+for instance in $(aws ec2 describe-instances \
+  --filters "Name=tag:Environment,Values=dev" \
+  --query "Reservations[].Instances[].InstanceId" \
+  --output text); do
+  aws ec2 start-instances --instance-ids $instance
+done
+
+for db in $(aws rds describe-db-instances \
+  --query "DBInstances[?TagList[?Key=='Environment' && Value=='dev']].DBInstanceIdentifier" \
+  --output text); do
+  aws rds start-db-instance --db-instance-identifier $db
+done
+```
+
+**Schedule with cron:**
+
+```bash
+# Add to crontab
+0 18 * * 1-5 /usr/local/bin/stop-dev-resources.sh
+0 8 * * 1-5 /usr/local/bin/start-dev-resources.sh
+
+# Savings: 14 hours/day × 5 days = 70 hours/week
+# For $200/week resources: $700/month savings
+```
+
+## Data transfer optimization
+
+### Use VPC endpoints
+
+**Reduce NAT Gateway costs:**
+
+```bash
+# S3 VPC endpoint (free)
+clanker ask --maker "create VPC endpoint for S3 in my-vpc"
+
+# DynamoDB VPC endpoint (free)
+clanker ask --maker "create VPC endpoint for DynamoDB in my-vpc"
+
+# Savings: $0.045/GB NAT Gateway processing
+# For 500 GB/month: $22.50 savings
+```
+
+### CloudFront for static assets
+
+```bash
+# Instead of serving from S3 directly
+clanker ask --maker "create CloudFront distribution for S3 bucket my-assets"
+
+# Savings on data transfer:
+# S3: $0.09/GB
+# CloudFront: $0.085/GB (plus caching reduces origin requests)
+```
+
+## Monitoring and alerts
+
+### Set up cost alerts
+
+```bash
+# AWS Budget
+clanker ask --maker "create AWS Budget with:
+- Monthly limit: $3000
+- Alert at 80% ($2400)
+- Alert at 100% ($3000)
+- Email: team@example.com"
+
+# CloudWatch billing alarm
+clanker ask --maker "create CloudWatch alarm when estimated charges exceed $3000"
+```
+
+### Weekly cost review
+
+```bash
+#!/bin/bash
+# weekly-cost-review.sh
+
+echo "=== Weekly Cost Review ==="
+echo ""
+
+echo "This week's spending:"
+clanker cost summary --start $(date -d '7 days ago' +%Y-%m-%d)
+
+echo ""
+echo "Cost anomalies:"
+clanker cost anomalies
+
+echo ""
+echo "Forecast for month:"
+clanker cost forecast
+
+echo ""
+echo "Action items:"
+echo "1. Review anomalies above and stop/delete unused resources"
+echo "2. Check for right-sizing opportunities"
+echo "3. Verify dev resources are stopped during off-hours"
+```
+
+## Cost optimization checklist
+
+<AccordionGroup>
+  <Accordion title="Compute">
+    - [ ] Stop/terminate idle EC2 instances
+    - [ ] Right-size oversized instances
+    - [ ] Use Spot instances for fault-tolerant workloads
+    - [ ] Purchase RIs/Savings Plans for steady workloads
+    - [ ] Stop dev/test resources during off-hours
+    - [ ] Right-size Lambda memory allocation
+    - [ ] Remove unused provisioned Lambda concurrency
+  </Accordion>
+  
+  <Accordion title="Storage">
+    - [ ] Delete unattached EBS volumes
+    - [ ] Convert gp2 volumes to gp3
+    - [ ] Delete old EBS snapshots
+    - [ ] Implement S3 lifecycle policies
+    - [ ] Use S3 Intelligent-Tiering for unknown access patterns
+    - [ ] Enable S3 Transfer Acceleration only when needed
+  </Accordion>
+  
+  <Accordion title="Database">
+    - [ ] Right-size underutilized RDS instances
+    - [ ] Stop dev/test RDS instances during off-hours
+    - [ ] Use Aurora Serverless for variable workloads
+    - [ ] Delete unused RDS snapshots
+    - [ ] Consider reserved capacity for production databases
+  </Accordion>
+  
+  <Accordion title="Networking">
+    - [ ] Use VPC endpoints for S3 and DynamoDB
+    - [ ] Consolidate multiple NAT Gateways when possible
+    - [ ] Use CloudFront for static content
+    - [ ] Reduce cross-region data transfer
+    - [ ] Remove unused Elastic IPs
+  </Accordion>
+  
+  <Accordion title="Kubernetes">
+    - [ ] Right-size pod resource requests/limits
+    - [ ] Enable cluster autoscaling
+    - [ ] Use Horizontal Pod Autoscaler
+    - [ ] Use Spot instances for non-critical workloads
+    - [ ] Scale down dev clusters during off-hours
+  </Accordion>
+</AccordionGroup>
+
+## Cost optimization strategies
+
+<CardGroup cols={2}>
+  <Card title="Start with quick wins" icon="bolt">
+    Begin with high-impact, low-effort optimizations like stopping idle resources and deleting unused volumes.
+  </Card>
+  
+  <Card title="Automate everything" icon="robot">
+    Use scripts and schedules to automatically stop dev resources, delete old snapshots, and apply lifecycle policies.
+  </Card>
+  
+  <Card title="Monitor continuously" icon="chart-line">
+    Run `clanker cost anomalies` weekly. Set up budget alerts. Review spending trends monthly.
+  </Card>
+  
+  <Card title="Tag for visibility" icon="tag">
+    Tag all resources with Environment, Team, and Project. Use tag-based cost allocation reports.
+  </Card>
+</CardGroup>
+
+## Expected savings
+
+Implementing these optimizations typically yields:
+
+| Optimization | Typical Savings |
+|--------------|----------------|
+| Stop idle resources | 10-30% |
+| Right-size instances | 20-40% |
+| Reserved Instances | 30-50% |
+| Spot instances | 60-90% |
+| S3 lifecycle policies | 50-80% on old data |
+| Delete waste (volumes, snapshots) | 5-15% |
+| VPC endpoints | 5-10% on data transfer |
+| Off-hours scheduling | 60-70% on dev resources |
+
+**Example:**
+
+Starting spend: $5,000/month
+
+After optimizations:
+- Stop idle resources: -$500 (10%)
+- Right-size: -$800 (16%)
+- RIs for prod: -$750 (15%)
+- Off-hours dev: -$600 (12%)
+- Storage cleanup: -$350 (7%)
+
+New spend: $2,000/month
+**Total savings: $3,000/month = $36,000/year (60%)**
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Cost analysis" href="/guides/cost-analysis" icon="chart-pie">
+    Deep dive into cost breakdowns and trends
+  </Card>
+  
+  <Card title="Monitoring resources" href="/guides/monitoring-resources" icon="chart-line">
+    Monitor costs and resource utilization
+  </Card>
+  
+  <Card title="Multi-environment" href="/guides/multi-environment" icon="network-wired">
+    Optimize costs per environment
+  </Card>
+  
+  <Card title="Security" href="/guides/security" icon="shield">
+    Balance cost optimization with security
+  </Card>
+</CardGroup>

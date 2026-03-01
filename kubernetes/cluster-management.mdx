@@ -1,0 +1,386 @@
+---
+title: Cluster management
+description: Create, configure, and manage Kubernetes clusters across EKS, GKE, and kubeadm
+---
+
+Manage the full lifecycle of Kubernetes clusters with Clanker's unified CLI interface.
+
+## Creating clusters
+
+### Amazon EKS
+
+Create managed Kubernetes clusters on AWS:
+
+```bash
+# Basic EKS cluster
+clanker k8s create eks my-cluster --nodes 2 --node-type t3.small
+
+# Production cluster with specific version
+clanker k8s create eks prod-cluster \
+  --nodes 3 \
+  --node-type t3.medium \
+  --version 1.29
+
+# Preview the plan before creation
+clanker k8s create eks my-cluster --plan
+```
+
+<Note>
+EKS cluster creation takes 15-20 minutes. Clanker automatically configures VPC, subnets, IAM roles, and node groups.
+</Note>
+
+**Available options:**
+
+<ParamField path="--nodes" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="t3.small">
+  EC2 instance type for worker nodes
+</ParamField>
+
+<ParamField path="--version" type="string" default="1.29">
+  Kubernetes version
+</ParamField>
+
+<ParamField path="--plan" type="boolean">
+  Show execution plan without applying changes
+</ParamField>
+
+<ParamField path="--apply" type="boolean">
+  Apply changes without confirmation prompt
+</ParamField>
+
+### Google GKE
+
+Create managed Kubernetes clusters on Google Cloud:
+
+```bash
+# Basic GKE cluster
+clanker k8s create gke my-cluster \
+  --gcp-project my-project \
+  --nodes 2 \
+  --node-type e2-standard-2
+
+# Regional cluster with preemptible nodes
+clanker k8s create gke dev-cluster \
+  --gcp-project my-project \
+  --gcp-region us-central1 \
+  --nodes 3 \
+  --preemptible
+```
+
+<Note>
+GKE cluster creation takes 5-10 minutes. The `--gcp-project` flag is required.
+</Note>
+
+**Available options:**
+
+<ParamField path="--gcp-project" type="string" required>
+  GCP project ID
+</ParamField>
+
+<ParamField path="--gcp-region" type="string" default="us-central1">
+  GCP region for the cluster
+</ParamField>
+
+<ParamField path="--nodes" type="integer" default="1">
+  Number of worker nodes per zone
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="e2-standard-2">
+  GCE machine type for nodes
+</ParamField>
+
+<ParamField path="--preemptible" type="boolean">
+  Use preemptible VMs for cost savings
+</ParamField>
+
+### Kubeadm clusters
+
+Create self-managed clusters on EC2 instances:
+
+```bash
+# Basic kubeadm cluster
+clanker k8s create kubeadm my-cluster \
+  --workers 2 \
+  --key-pair my-key
+
+# Custom instance types
+clanker k8s create kubeadm prod-cluster \
+  --workers 3 \
+  --node-type t3.medium \
+  --key-pair prod-key \
+  --version 1.29
+```
+
+<Warning>
+Kubeadm clusters require an AWS key pair for SSH access. If the key pair doesn't exist, Clanker will create it automatically.
+</Warning>
+
+**Available options:**
+
+<ParamField path="--workers" type="integer" default="1">
+  Number of worker nodes
+</ParamField>
+
+<ParamField path="--node-type" type="string" default="t3.small">
+  EC2 instance type for nodes
+</ParamField>
+
+<ParamField path="--key-pair" type="string">
+  AWS key pair name (auto-creates if not exists)
+</ParamField>
+
+<ParamField path="--ssh-key" type="string">
+  Path to SSH private key (default: ~/.ssh/\<key-pair\>)
+</ParamField>
+
+<ParamField path="--version" type="string" default="1.29">
+  Kubernetes version
+</ParamField>
+
+## Listing clusters
+
+View all clusters of a specific type:
+
+```bash
+# List EKS clusters
+clanker k8s list eks
+
+# List GKE clusters
+clanker k8s list gke --gcp-project my-project
+
+# List kubeadm clusters
+clanker k8s list kubeadm
+```
+
+**Example output:**
+
+```
+=== EKS Clusters ===
+
+Name:     my-cluster
+Status:   ACTIVE
+Region:   us-west-2
+Version:  1.29
+Endpoint: https://ABC123.gr7.us-west-2.eks.amazonaws.com
+Workers:  2
+```
+
+## Accessing clusters
+
+Retrieve and configure kubeconfig for cluster access:
+
+```bash
+# Get kubeconfig for EKS cluster
+clanker k8s kubeconfig eks my-cluster
+
+# Get kubeconfig for GKE cluster
+clanker k8s kubeconfig gke my-cluster --gcp-project my-project
+
+# Get kubeconfig for kubeadm cluster
+clanker k8s kubeconfig kubeadm my-cluster
+```
+
+This updates `~/.kube/config` with the cluster credentials. Use the cluster:
+
+```bash
+# Verify access
+kubectl get nodes
+
+# Or specify kubeconfig explicitly
+export KUBECONFIG=~/.kube/config
+kubectl get pods -A
+```
+
+## Deleting clusters
+
+<Warning>
+Cluster deletion is permanent and cannot be undone. All workloads and data will be lost.
+</Warning>
+
+Delete a cluster:
+
+```bash
+# Delete EKS cluster
+clanker k8s delete eks my-cluster
+
+# Delete GKE cluster
+clanker k8s delete gke my-cluster --gcp-project my-project
+
+# Delete kubeadm cluster
+clanker k8s delete kubeadm my-cluster
+```
+
+You'll be prompted for confirmation before deletion proceeds.
+
+## Cluster resources
+
+Fetch all Kubernetes resources from a cluster:
+
+```bash
+# Get resources from specific cluster
+clanker k8s resources --cluster my-cluster
+
+# Output as JSON
+clanker k8s resources --cluster my-cluster --output json
+
+# Get resources from all EKS clusters
+clanker k8s resources
+```
+
+This retrieves nodes, pods, services, persistent volumes, and ConfigMaps for visualization or analysis.
+
+## Configuration options
+
+### AWS profile and region
+
+Set default AWS configuration in `~/.clanker/config.yaml`:
+
+```yaml
+infra:
+  default_environment: dev
+  aws:
+    default_profile: myprofile
+    default_region: us-west-2
+    environments:
+      dev:
+        profile: dev-profile
+        region: us-east-1
+      prod:
+        profile: prod-profile
+        region: us-west-2
+```
+
+### GCP project and region
+
+Set default GCP configuration:
+
+```yaml
+infra:
+  gcp:
+    region: us-central1
+```
+
+Or use environment variables:
+
+```bash
+export GCP_PROJECT=my-project-id
+export GCP_REGION=us-central1
+```
+
+## Implementation details
+
+### EKS cluster creation
+
+Clanker creates EKS clusters using `eksctl` (preferred) or AWS CLI:
+
+<CodeGroup>
+```go cmd/k8s.go:453
+func runCreateEKS(cmd *cobra.Command, args []string) error {
+	clusterName := args[0]
+	ctx := context.Background()
+
+	agent, awsProfile, awsRegion := getK8sAgent()
+
+	// Generate the plan
+	k8sPlan := plan.GenerateEKSCreatePlan(plan.EKSCreateOptions{
+		ClusterName:       clusterName,
+		Region:            awsRegion,
+		Profile:           awsProfile,
+		NodeCount:         k8sNodes,
+		NodeType:          k8sNodeType,
+		KubernetesVersion: k8sK8sVersion,
+	})
+
+	// Execute using existing agent
+	opts := cluster.CreateOptions{
+		Name:              clusterName,
+		Region:            awsRegion,
+		WorkerCount:       k8sNodes,
+		WorkerType:        k8sNodeType,
+		KubernetesVersion: k8sK8sVersion,
+	}
+
+	info, err := agent.CreateEKSCluster(ctx, opts)
+	return err
+}
+```
+
+```go internal/k8s/cluster/eks.go:76
+func (p *EKSProvider) createWithEksctl(ctx context.Context, opts CreateOptions, profile, region string) (*ClusterInfo, error) {
+	args := []string{
+		"create", "cluster",
+		"--name", opts.Name,
+		"--region", region,
+		"--nodes", fmt.Sprintf("%d", nodeCount),
+		"--node-type", opts.WorkerType,
+	}
+
+	if opts.KubernetesVersion != "" {
+		args = append(args, "--version", opts.KubernetesVersion)
+	}
+
+	output, err := p.runEksctl(ctx, args...)
+	return p.GetCluster(ctx, opts.Name)
+}
+```
+</CodeGroup>
+
+### GKE cluster creation
+
+GKE clusters are created using the `gcloud` CLI:
+
+```go internal/k8s/cluster/gke.go:43
+func (p *GKEProvider) Create(ctx context.Context, opts CreateOptions) (*ClusterInfo, error) {
+	args := []string{
+		"container", "clusters", "create", opts.Name,
+		"--region", region,
+		"--num-nodes", fmt.Sprintf("%d", nodeCount),
+		"--machine-type", opts.WorkerType,
+	}
+
+	if opts.Preemptible {
+		args = append(args, "--preemptible")
+	}
+
+	_, err := p.runGcloud(ctx, project, args...)
+	return p.GetCluster(ctx, opts.Name)
+}
+```
+
+### Kubeadm cluster bootstrapping
+
+Kubeadm clusters involve EC2 instance provisioning and SSH-based bootstrap:
+
+```go internal/k8s/cluster/kubeadm.go:62
+func (p *KubeadmProvider) Create(ctx context.Context, opts CreateOptions) (*ClusterInfo, error) {
+	// Create security group
+	sgID, err := p.createSecurityGroup(ctx, opts.Name)
+
+	// Launch control plane instance
+	cpInstance, err := p.launchInstance(ctx, opts.Name, "control-plane", cpInstanceType, sgID, opts.Tags)
+
+	// Bootstrap control plane via SSH
+	ssh, err := NewSSHClient(SSHClientOptions{
+		Host:           cpInstance.PublicIP,
+		User:           "ubuntu",
+		PrivateKeyPath: p.sshKeyPath,
+	})
+
+	if err := BootstrapNode(ctx, ssh, bootstrapConfig); err != nil {
+		return nil, err
+	}
+
+	// Initialize control plane
+	initOutput, err := InitializeControlPlane(ctx, ssh, bootstrapConfig)
+
+	// Launch and join worker nodes
+	for i := 0; i < workerCount; i++ {
+		// Launch worker, bootstrap, and join to cluster
+	}
+
+	return info, nil
+}
+```

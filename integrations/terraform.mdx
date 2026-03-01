@@ -1,0 +1,518 @@
+---
+title: Terraform workspace management
+description: Manage Terraform workspaces, execute operations, and query infrastructure state with Clanker CLI
+---
+
+Clanker provides deep integration with Terraform, enabling you to manage multiple workspaces, execute Terraform commands, and query infrastructure state directly from the CLI. The integration supports both path-based and workspace-based configurations.
+
+## Configuration
+
+Define Terraform workspaces in your `~/.clanker/config.yaml`:
+
+```yaml
+terraform:
+  default_workspace: "dev"
+  workspaces:
+    dev:
+      path: "/path/to/terraform/dev"
+      description: "Development environment"
+    staging:
+      path: "/path/to/terraform/staging"
+      description: "Staging environment"
+    prod:
+      path: "/path/to/terraform/production"
+      description: "Production environment"
+```
+
+<Note>
+Each workspace must specify a `path` to the directory containing Terraform configuration files (`.tf` files).
+</Note>
+
+## Client initialization
+
+The Terraform client supports two initialization modes:
+
+### 1. Path-based initialization
+
+Directly specify a Terraform directory:
+
+```go
+client, err := tfclient.NewClient("/path/to/terraform")
+// Creates a client with workspace="local" and path="/path/to/terraform"
+```
+
+The client recognizes path patterns and automatically expands:
+
+```go
+func looksLikePath(value string) bool {
+    value = strings.TrimSpace(value)
+    if value == "" {
+        return false
+    }
+    if strings.ContainsAny(value, "/\\") {
+        return true
+    }
+    if strings.HasPrefix(value, "~") || strings.HasPrefix(value, ".") {
+        return true
+    }
+    return false
+}
+```
+
+### 2. Workspace-based initialization
+
+Use configured workspace names:
+
+```go
+client, err := tfclient.NewClient("dev")
+// Loads path from config: terraform.workspaces.dev.path
+```
+
+If no workspace is specified, uses `terraform.default_workspace` (defaults to "dev").
+
+## Path expansion
+
+The client automatically handles environment variables and home directory expansion:
+
+```go
+func expandTerraformPath(raw string) (string, bool) {
+    raw = strings.TrimSpace(raw)
+    if strings.HasPrefix(raw, "~") {
+        if home, err := os.UserHomeDir(); err == nil {
+            raw = filepath.Join(home, strings.TrimPrefix(raw, "~"))
+        }
+    }
+    path := filepath.Clean(os.ExpandEnv(raw))
+    if info, err := os.Stat(path); err == nil && info.IsDir() {
+        return path, true
+    }
+    return "", false
+}
+```
+
+**Supported patterns:**
+
+- `~/terraform/dev` → `/home/user/terraform/dev`
+- `$HOME/terraform/dev` → `/home/user/terraform/dev`
+- `./environments/dev` → Current directory relative path
+- `/absolute/path/to/terraform`
+
+## Context-aware queries
+
+The Terraform client provides intelligent context gathering based on query content:
+
+```go
+func (c *Client) GetRelevantContext(ctx context.Context, question string) (string, error) {
+    var context strings.Builder
+    
+    // Always get workspace info
+    workspaceInfo, err := c.getWorkspaceInfo(ctx)
+    if err == nil {
+        context.WriteString("Terraform Workspace Info:\n")
+        context.WriteString(workspaceInfo)
+        context.WriteString("\n\n")
+    }
+    
+    // Always get state info
+    stateInfo, err := c.getStateInfo(ctx)
+    if err == nil {
+        context.WriteString("Terraform State:\n")
+        context.WriteString(stateInfo)
+        context.WriteString("\n\n")
+    }
+    
+    // Get plan info if query mentions changes
+    questionLower := strings.ToLower(question)
+    if strings.Contains(questionLower, "plan") || 
+       strings.Contains(questionLower, "change") || 
+       strings.Contains(questionLower, "diff") {
+        planInfo, err := c.getPlanInfo(ctx)
+        if err == nil {
+            context.WriteString("Terraform Plan:\n")
+            context.WriteString(planInfo)
+        }
+    }
+    
+    // Get outputs if query mentions outputs or resources
+    if strings.Contains(questionLower, "output") || 
+       strings.Contains(questionLower, "infrastructure") || 
+       strings.Contains(questionLower, "resource") {
+        outputInfo, err := c.getOutputInfo(ctx)
+        if err == nil && outputInfo != "" {
+            context.WriteString("Terraform Outputs:\n")
+            context.WriteString(outputInfo)
+        }
+    }
+    
+    return context.String(), nil
+}
+```
+
+### Workspace information
+
+Retrieve current workspace and path:
+
+```go
+func (c *Client) getWorkspaceInfo(ctx context.Context) (string, error) {
+    cmd := exec.CommandContext(ctx, "terraform", "workspace", "show")
+    cmd.Dir = c.path
+    
+    output, err := cmd.Output()
+    if err != nil {
+        return "", err
+    }
+    
+    return fmt.Sprintf("Current workspace: %s\nConfigured path: %s", 
+        strings.TrimSpace(string(output)), c.path), nil
+}
+```
+
+**Example output:**
+
+```
+Current workspace: default
+Configured path: /home/user/terraform/dev
+```
+
+### State information
+
+List resources and group by type:
+
+```go
+cmd := exec.CommandContext(ctx, "terraform", "state", "list")
+cmd.Dir = c.path
+
+output, err := cmd.Output()
+lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+// Group resources by type
+resourceTypes := make(map[string]int)
+for _, line := range lines {
+    if line == "" {
+        continue
+    }
+    parts := strings.Split(line, ".")
+    if len(parts) > 0 {
+        resourceTypes[parts[0]]++
+    }
+}
+```
+
+**Example output:**
+
+```
+Total resources: 23
+Resource types:
+  aws_instance: 3
+  aws_s3_bucket: 5
+  aws_iam_role: 8
+  aws_security_group: 7
+```
+
+### Plan information
+
+Execute `terraform plan` and extract summary:
+
+```go
+func (c *Client) getPlanInfo(ctx context.Context) (string, error) {
+    cmd := exec.CommandContext(ctx, "terraform", "plan", "-no-color", "-compact-warnings")
+    cmd.Dir = c.path
+    
+    output, err := cmd.Output()
+    if err != nil {
+        return "", err
+    }
+    
+    // Return summary of plan
+    lines := strings.Split(string(output), "\n")
+    var summary strings.Builder
+    for _, line := range lines {
+        if strings.Contains(line, "Plan:") || strings.Contains(line, "No changes") {
+            summary.WriteString(line)
+            summary.WriteString("\n")
+        }
+    }
+    
+    return summary.String(), nil
+}
+```
+
+**Example output:**
+
+```
+Plan: 2 to add, 1 to change, 0 to destroy.
+```
+
+### Output information
+
+Retrieve Terraform outputs in JSON format:
+
+```go
+func (c *Client) GetTerraformOutputs(ctx context.Context) (map[string]interface{}, error) {
+    cmd := exec.CommandContext(ctx, "terraform", "output", "-json")
+    cmd.Dir = c.path
+    
+    output, err := cmd.Output()
+    if err != nil {
+        return nil, err
+    }
+    
+    var outputs map[string]interface{}
+    if err := json.Unmarshal(output, &outputs); err != nil {
+        return nil, fmt.Errorf("failed to parse terraform outputs: %w", err)
+    }
+    
+    // Extract just the values from terraform output format
+    result := make(map[string]interface{})
+    for key, value := range outputs {
+        if valueMap, ok := value.(map[string]interface{}); ok {
+            if val, exists := valueMap["value"]; exists {
+                result[key] = val
+            }
+        }
+    }
+    
+    return result, nil
+}
+```
+
+## Terraform operations
+
+### Init
+
+Initialize Terraform working directory:
+
+```go
+func (c *Client) RunInit(ctx context.Context) (string, error) {
+    return c.runCommand(ctx, "init", "-input=false")
+}
+```
+
+Command line:
+
+```bash
+clanker ask --terraform dev "terraform init"
+```
+
+### Plan
+
+Generate and show execution plan:
+
+```go
+func (c *Client) RunPlan(ctx context.Context) (string, error) {
+    initOutput, err := c.RunInit(ctx)
+    if err != nil {
+        return "", err
+    }
+    planOutput, err := c.runCommand(ctx, "plan", "-no-color", "-compact-warnings")
+    if err != nil {
+        return "", err
+    }
+    return mergeOutputs(initOutput, planOutput), nil
+}
+```
+
+Command line:
+
+```bash
+clanker ask --terraform staging "terraform plan"
+```
+
+<Note>
+Plan operations automatically run `terraform init` first to ensure dependencies are up to date.
+</Note>
+
+### Apply
+
+Apply Terraform changes (requires confirmation):
+
+```go
+func (c *Client) RunApply(ctx context.Context) (string, error) {
+    initOutput, err := c.RunInit(ctx)
+    if err != nil {
+        return "", err
+    }
+    applyOutput, err := c.runCommand(ctx, "apply", "-auto-approve", "-no-color")
+    if err != nil {
+        return "", err
+    }
+    return mergeOutputs(initOutput, applyOutput), nil
+}
+```
+
+Command line:
+
+```bash
+clanker ask --terraform prod "confirm apply terraform"
+```
+
+<Warning>
+Apply operations require explicit confirmation with "confirm apply" in the query. This prevents accidental infrastructure changes.
+</Warning>
+
+## List workspaces
+
+View all configured Terraform workspaces:
+
+```bash
+clanker terraform list
+```
+
+Example output:
+
+```
+Available Terraform Workspaces (default: dev):
+
+  dev (default)
+    Path: /home/user/terraform/dev
+    Description: Development environment
+
+  staging
+    Path: /home/user/terraform/staging
+    Description: Staging environment
+
+  prod
+    Path: /home/user/terraform/production
+    Description: Production environment
+
+Usage: clanker ask --terraform <workspace-name> "your infrastructure question"
+```
+
+## Natural language queries
+
+Use the `--terraform` flag with natural language queries:
+
+```bash
+clanker ask --terraform dev "How many EC2 instances are managed?"
+```
+
+```bash
+clanker ask --terraform staging "What will change if I apply now?"
+```
+
+```bash
+clanker ask --terraform prod "Show me all S3 buckets and their configurations"
+```
+
+The AI receives Terraform state, outputs, and workspace context automatically.
+
+## Workspace selection
+
+Specify workspace via flag:
+
+```bash
+clanker ask --workspace staging --terraform "what resources exist?"
+```
+
+Or configure default:
+
+```yaml
+terraform:
+  default_workspace: "staging"
+```
+
+Then omit the flag:
+
+```bash
+clanker ask --terraform "what resources exist?"
+```
+
+## Command execution
+
+The client executes Terraform commands in the configured workspace directory:
+
+```go
+func (c *Client) runCommand(ctx context.Context, args ...string) (string, error) {
+    cmd := exec.CommandContext(ctx, "terraform", args...)
+    cmd.Dir = c.path  // Set working directory to workspace path
+    
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        return "", fmt.Errorf("terraform %s failed: %w\nOutput: %s", 
+            strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+    }
+    
+    return strings.TrimSpace(string(output)), nil
+}
+```
+
+## Error handling
+
+The client provides detailed error messages including Terraform output:
+
+```go
+if err != nil {
+    return fmt.Errorf("terraform workspace '%s' not found in configuration", workspace)
+}
+```
+
+Common errors:
+
+- **Workspace not found**: Check `terraform.workspaces` configuration
+- **Path does not exist**: Verify workspace path in config
+- **Terraform not installed**: Ensure `terraform` binary is in PATH
+- **Backend initialization failed**: Run `terraform init` manually
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive workspace names">
+    Name workspaces after environments (dev, staging, prod) or teams (platform, data, ml) for clarity.
+  </Accordion>
+
+  <Accordion title="Set a sensible default workspace">
+    Configure `terraform.default_workspace` to the environment you query most frequently, typically "dev" or "staging".
+  </Accordion>
+
+  <Accordion title="Always run init before operations">
+    The client automatically runs `terraform init` before plan/apply operations. Ensure your backend configuration is correct.
+  </Accordion>
+
+  <Accordion title="Use path expansion features">
+    Leverage `~` and environment variables in paths for portability across different systems:
+    ```yaml
+    path: "~/projects/terraform/dev"
+    path: "$TERRAFORM_ROOT/staging"
+    ```
+  </Accordion>
+
+  <Accordion title="Query state efficiently">
+    Natural language queries leverage cached state information. For real-time data, explicitly request a plan or refresh.
+  </Accordion>
+</AccordionGroup>
+
+## Integration with AI context
+
+When using `ask` with `--terraform`, Clanker enriches AI queries with workspace context:
+
+```go
+if includeTerraform {
+    tfClient, err := tfclient.NewClient(workspace)
+    if err != nil {
+        return fmt.Errorf("failed to create Terraform client: %w", err)
+    }
+    
+    terraformContext, err = tfClient.GetRelevantContext(ctx, question)
+    // Terraform context passed to AI for intelligent analysis
+}
+```
+
+This enables complex queries:
+
+```bash
+clanker ask --terraform staging "Compare resource counts between staging and prod"
+```
+
+```bash
+clanker ask --terraform dev "What security groups allow unrestricted access?"
+```
+
+## Combined queries
+
+Combine Terraform with AWS context for comprehensive infrastructure analysis:
+
+```bash
+clanker ask --aws --terraform dev "Compare live AWS resources with Terraform state"
+```
+
+The AI receives both Terraform state and live AWS resource data for drift detection and validation.

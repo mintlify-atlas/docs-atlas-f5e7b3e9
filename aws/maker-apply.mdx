@@ -1,0 +1,439 @@
+---
+title: Maker and apply workflow
+description: Generate and execute AWS CLI plans for infrastructure changes with AI-powered automation
+---
+
+The maker/apply workflow enables you to generate and execute infrastructure change plans using natural language. Clanker translates your intent into executable AWS CLI commands.
+
+## Overview
+
+The workflow has two phases:
+
+<Steps>
+  <Step title="Maker (plan generation)">
+    AI generates a JSON plan with AWS CLI commands based on your request
+  </Step>
+  <Step title="Apply (execution)">
+    Clanker executes the plan with dependency resolution and error handling
+  </Step>
+</Steps>
+
+## Maker mode
+
+### Generate a plan
+
+```bash
+clanker ask "Deploy a PostgreSQL RDS instance" --maker > plan.json
+```
+
+The output is a structured JSON plan:
+
+```json
+{
+  "version": 1,
+  "createdAt": "2026-03-01T10:30:00Z",
+  "provider": "aws",
+  "question": "Deploy a PostgreSQL RDS instance",
+  "summary": "Create RDS PostgreSQL with security groups and subnet group",
+  "commands": [
+    {
+      "args": ["ec2", "describe-vpcs", "--filters", "Name=isDefault,Values=true"],
+      "reason": "Find the default VPC",
+      "produces": {"VPC_ID": "$.Vpcs[0].VpcId"}
+    },
+    {
+      "args": ["ec2", "create-security-group", "--group-name", "rds-sg", "--description", "RDS Security Group", "--vpc-id", "<VPC_ID>"],
+      "reason": "Create security group for RDS",
+      "produces": {"SG_ID": "$.GroupId"}
+    }
+  ]
+}
+```
+
+### Plan structure
+
+From `~/workspace/source/internal/maker/plan.go:15-29`:
+
+```go
+type Plan struct {
+    Version   int       `json:"version"`
+    CreatedAt time.Time `json:"createdAt"`
+    Provider  string    `json:"provider,omitempty"`
+    Question  string    `json:"question"`
+    Summary   string    `json:"summary"`
+    Commands  []Command `json:"commands"`
+    Notes     []string  `json:"notes,omitempty"`
+}
+
+type Command struct {
+    Args     []string          `json:"args"`
+    Reason   string            `json:"reason,omitempty"`
+    Produces map[string]string `json:"produces,omitempty"`
+}
+```
+
+### Multi-provider support
+
+```bash
+# AWS (default)
+clanker ask "Create S3 bucket" --maker
+
+# GCP
+clanker ask "Create Cloud Storage bucket" --gcp --maker
+
+# Azure
+clanker ask "Create Storage Account" --azure --maker
+
+# Cloudflare
+clanker ask "Create DNS record" --cloudflare --maker
+```
+
+Provider is auto-detected or can be explicitly set:
+
+From `~/workspace/source/cmd/ask.go:326-351`:
+
+```go
+makerProvider := "aws"
+makerProviderReason := "default"
+
+switch {
+case explicitCloudflare:
+    makerProvider = "cloudflare"
+    makerProviderReason = "explicit"
+case explicitAzure:
+    makerProvider = "azure"
+    makerProviderReason = "explicit"
+case explicitGCP:
+    makerProvider = "gcp"
+    makerProviderReason = "explicit"
+case explicitAWS:
+    makerProvider = "aws"
+    makerProviderReason = "explicit"
+default:
+    svcCtx := routing.InferContext(questionForRouting(question))
+    if svcCtx.Cloudflare {
+        makerProvider = "cloudflare"
+        makerProviderReason = "inferred"
+    }
+}
+```
+
+## Apply mode
+
+### Execute a plan
+
+```bash
+# From file
+clanker ask --apply --plan-file plan.json
+
+# From stdin
+cat plan.json | clanker ask --apply
+```
+
+Clanker executes each command in order, resolving placeholders and handling errors.
+
+### Placeholder resolution
+
+Placeholders like `<VPC_ID>` are automatically substituted:
+
+1. Command 1 produces `VPC_ID` via JSONPath: `"produces": {"VPC_ID": "$.Vpcs[0].VpcId"}`
+2. Command 2 references `<VPC_ID>` in args: `"--vpc-id", "<VPC_ID>"`
+3. Executor substitutes the actual value: `--vpc-id vpc-0abc123`
+
+### Common produces mappings
+
+From `~/workspace/source/internal/maker/prompt.go:153-167`:
+
+```text
+Common produces mappings (use these exact JSON paths):
+- ec2 create-security-group: { "SG_ID": "$.GroupId" }
+- ec2 create-vpc: { "VPC_ID": "$.Vpc.VpcId" }
+- ec2 create-subnet: { "SUBNET_ID": "$.Subnet.SubnetId" }
+- ec2 create-internet-gateway: { "IGW_ID": "$.InternetGateway.InternetGatewayId" }
+- lambda create-function: { "LAMBDA_ARN": "$.FunctionArn" }
+- iam create-role: { "ROLE_ARN": "$.Role.Arn" }
+- rds create-db-subnet-group: { "DB_SUBNET_GROUP": "$.DBSubnetGroup.DBSubnetGroupName" }
+- elbv2 create-load-balancer: { "ALB_ARN": "$.LoadBalancers[0].LoadBalancerArn" }
+- elbv2 create-target-group: { "TG_ARN": "$.TargetGroups[0].TargetGroupArn" }
+```
+
+## Plan enrichment
+
+Before execution, Clanker enriches plans with missing dependencies:
+
+### Automatic dependency resolution
+
+From `~/workspace/source/cmd/ask.go:477`:
+
+```go
+_ = maker.EnrichPlan(ctx, plan, maker.ExecOptions{
+    Profile: targetProfile, 
+    Region: region, 
+    Writer: io.Discard, 
+    Destroyer: destroyer
+})
+```
+
+Enrichment adds:
+- Missing security group rules
+- VPC/subnet dependencies
+- IAM role trust policies
+- Network routing configurations
+
+### Example: Security group enrichment
+
+If a plan creates an EC2 instance in a security group without egress rules, enrichment adds:
+
+```json
+{
+  "args": ["ec2", "authorize-security-group-egress", "--group-id", "<SG_ID>", "--ip-permissions", "IpProtocol=-1,IpRanges=[{CidrIp=0.0.0.0/0}]"],
+  "reason": "[auto] Allow all outbound traffic"
+}
+```
+
+## Error handling
+
+### AI-assisted error recovery
+
+When a command fails, Clanker can use AI to diagnose and fix the issue:
+
+From `~/workspace/source/cmd/ask.go:246-257`:
+
+```go
+return maker.ExecutePlan(ctx, makerPlan, maker.ExecOptions{
+    Profile:    targetProfile,
+    Region:     region,
+    GCPProject: gcpProject,
+    Writer:     os.Stdout,
+    Destroyer:  destroyer,
+    AIProvider: provider,
+    AIAPIKey:   apiKey,
+    AIProfile:  aiProfile,
+    Debug:      debug,
+})
+```
+
+The AI analyzes error messages and suggests fixes like:
+- Adding missing IAM permissions
+- Resolving resource conflicts
+- Fixing invalid parameter values
+
+### Healing policy
+
+From `~/workspace/source/internal/maker/exec.go:56-75`:
+
+```go
+type healingPolicy struct {
+    Enabled             bool
+    MaxAutoHealAttempts int
+    TransientRetries    int
+    MaxWindow           time.Duration
+}
+
+func defaultHealingPolicy() healingPolicy {
+    return healingPolicy{
+        Enabled:             true,
+        MaxAutoHealAttempts: 4,
+        TransientRetries:    2,
+        MaxWindow:           8 * time.Minute,
+    }
+}
+```
+
+The executor:
+- Retries transient errors (throttling, timeouts) up to 2 times
+- Attempts AI-assisted healing up to 4 times
+- Stops after 8 minutes to prevent infinite loops
+
+## Destructive operations
+
+### Enable destroyer mode
+
+```bash
+clanker ask "Delete the test VPC" --maker --destroyer > delete-plan.json
+clanker ask --apply --plan-file delete-plan.json --destroyer
+```
+
+<Warning>
+Destructor mode allows delete/terminate/destroy operations. Use with caution.
+</Warning>
+
+From `~/workspace/source/internal/maker/prompt.go:13-16`:
+
+```go
+destructiveRule := "- Avoid any destructive operations (delete/remove/terminate/destroy)."
+if destroyer {
+    destructiveRule = "- Destructive operations are allowed ONLY if the user explicitly asked for deletion/teardown."
+}
+```
+
+### Region-grouped deletions
+
+For multi-region teardowns, commands are grouped by region:
+
+From `~/workspace/source/internal/maker/prompt.go:142-144`:
+
+```text
+- For destructive/teardown plans, strongly prefer region-grouped delete order: 
+  complete one region block, then move to the next region.
+- Avoid interleaving unrelated cross-region deletes in alternating steps.
+```
+
+## Advanced features
+
+### Docker integration
+
+Clanker can build and push Docker images as part of a plan:
+
+```bash
+clanker ask "Deploy my GitHub repo to ECS" --maker
+```
+
+The generated plan includes:
+1. ECR repository creation
+2. Docker image build and push
+3. ECS task definition and service creation
+
+### User data generation
+
+For EC2 instances, Clanker generates user-data scripts:
+
+From `~/workspace/source/internal/maker/prompt.go:86-88`:
+
+```json
+{
+  "args": ["ec2", "run-instances", "--image-id", "<AMI_ID>", "--user-data", "<USER_DATA>"],
+  "reason": "Launch EC2 with Docker bootstrap (the runner/maker will generate <USER_DATA>...)"
+}
+```
+
+The executor automatically generates user-data for:
+- Docker installation and configuration
+- Application deployment
+- Environment variable injection
+
+### WordPress one-click deploy
+
+Clanker has built-in support for WordPress deployment:
+
+```bash
+clanker ask "One-click deploy WordPress" --maker
+```
+
+Generates a complete plan with:
+- VPC and subnet discovery
+- Security groups (ALB + EC2)
+- Application Load Balancer
+- EC2 instance with Docker Compose (WordPress + MariaDB)
+- Health check configuration for `/wp-login.php`
+
+From `~/workspace/source/internal/maker/prompt.go:19-97`.
+
+## Examples
+
+<AccordionGroup>
+  <Accordion title="Create Lambda function with API Gateway">
+    ```bash
+    clanker ask "Create a Lambda function behind API Gateway" --maker > lambda-api.json
+    clanker ask --apply --plan-file lambda-api.json
+    ```
+    
+    Generates plan with:
+    - IAM role for Lambda
+    - Lambda function creation
+    - API Gateway REST API
+    - Integration and deployment
+  </Accordion>
+  
+  <Accordion title="Deploy RDS with read replicas">
+    ```bash
+    clanker ask "PostgreSQL RDS with 2 read replicas in different AZs" --maker
+    ```
+    
+    Includes:
+    - DB subnet group across multiple AZs
+    - Security group with PostgreSQL port
+    - Primary RDS instance
+    - Two read replica instances
+  </Accordion>
+  
+  <Accordion title="Multi-region ALB setup">
+    ```bash
+    clanker ask "Deploy ALB in us-east-1 and us-west-2" --maker --destroyer
+    ```
+    
+    Commands are region-grouped:
+    - All us-east-1 resources created first
+    - Then us-west-2 resources
+    - Ensures proper regional isolation
+  </Accordion>
+  
+  <Accordion title="Cleanup entire environment">
+    ```bash
+    clanker ask "Delete all resources with tag Environment=test" --maker --destroyer
+    ```
+    
+    <Warning>
+    Review the plan carefully before applying destructive operations.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Plan validation
+
+### Required fields
+
+From `~/workspace/source/internal/maker/plan.go:68-69`:
+
+```go
+if len(p.Commands) == 0 {
+    return nil, fmt.Errorf("plan has no commands")
+}
+```
+
+Plans must have:
+- At least one command
+- Valid `args` array (no empty commands)
+- Proper placeholder bindings
+
+### Placeholder validation
+
+From `~/workspace/source/internal/maker/prompt.go:147-151`:
+
+```text
+Placeholders and bindings (CRITICAL):
+- If you use ANY placeholder token "<NAME>", you MUST ensure an earlier command includes:
+  - "produces": { "NAME": "$.json.path.to.value" }
+- Without produces, the placeholder will NOT be substituted and the command will fail.
+```
+
+## Output bindings
+
+After execution, resource bindings are available for external use:
+
+From `~/workspace/source/internal/maker/exec.go:229-230`:
+
+```go
+OutputBindings map[string]string
+```
+
+Example bindings:
+
+```json
+{
+  "ALB_DNS": "wp-alb-1234567890.us-east-1.elb.amazonaws.com",
+  "INSTANCE_ID": "i-0abc123def456",
+  "VPC_ID": "vpc-0xyz789"
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Service support" icon="aws" href="/aws/services">
+    See all supported AWS services
+  </Card>
+  <Card title="Ask mode" icon="circle-question" href="/aws/ask-mode">
+    Query infrastructure with natural language
+  </Card>
+</CardGroup>

@@ -1,0 +1,545 @@
+---
+title: Debugging
+description: Debug flags, trace output, and diagnostic tools for troubleshooting Clanker CLI
+---
+
+Clanker provides comprehensive debugging capabilities to help you understand what's happening under the hood. Use debug flags to see tool selection, AWS CLI calls, prompt sizes, agent lifecycle, and more.
+
+## Debug flags
+
+### Global debug mode
+
+Enable debug output for all commands:
+
+```bash
+clanker ask "what ec2 instances are running" --debug
+```
+
+Or set in config:
+
+```yaml .clanker.yaml
+debug: true
+```
+
+When enabled, you'll see:
+- Config file location
+- AWS profile and region resolution
+- Tool selection decisions
+- AWS CLI command invocations
+- HTTP request/response details
+- Prompt token counts
+- LLM provider and model
+
+See `cmd/root.go:35` for the global debug flag.
+
+### Agent trace mode
+
+Enable detailed agent lifecycle logging:
+
+```bash
+clanker ask "show lambda errors" --agent-trace
+```
+
+Or set in config:
+
+```yaml .clanker.yaml
+agent:
+  trace: true
+```
+
+Agent trace output includes:
+- Decision tree analysis results
+- Applicable nodes and priorities
+- Execution order groups
+- Agent start/completion events
+- Dependency satisfaction checks
+- Operation execution details
+- Aggregation statistics
+
+**Example output**:
+
+```
+🌳 Decision tree analysis: 3 applicable nodes found
+  📊 Node: Lambda Error Analysis (priority: 9, agents: [log, infrastructure])
+  📊 Node: Service Health Check (priority: 7, agents: [metrics])
+  📊 Node: General Investigation (priority: 5, agents: [k8s])
+📊 Executing order group 1 with 3 agents
+  ✨ Started log agent (ID: log-1234) with dependencies
+  ✨ Started metrics agent (ID: metrics-5678) with dependencies
+  ✨ Started k8s agent (ID: k8s-9012) with dependencies
+🤖 Agent log-1234 (log) executing 2 operations
+✅ Agent log-1234 completed operation: investigate_service_logs
+✅ Agent log completed, provided data: [logs error_patterns log_metrics]
+✅ Order group 1 completed
+🎉 All 3 agents completed (3 successful, 0 failed)
+```
+
+See `internal/agent/coordinator/coordinator.go:17` for the trace check.
+
+## Component-specific debugging
+
+### AWS operations
+
+When debug mode is enabled, AWS operations show:
+
+```
+🔧 AWS Operation: list_lambda_functions
+📋 Parameters: {}
+💻 Executing AWS CLI: aws lambda list-functions --output json --region us-east-1
+✅ AWS operation completed (1.2s)
+```
+
+For parallel operations:
+
+```
+🚀 Starting 5 parallel operations with concurrency limit: 3
+  ✨ Starting operation: describe_ec2_instances
+  ✨ Starting operation: list_lambda_functions
+  ✨ Starting operation: describe_ecs_services
+⏳ Waiting for parallel operations (5 total)...
+✅ Parallel operations completed: 5 successful, 0 failed (3.4s)
+```
+
+See `internal/aws/llm.go:93` and `internal/aws/parallel.go:19`.
+
+### Backend API calls
+
+When using backend credential storage, debug mode shows HTTP requests:
+
+```
+[backend] GET /api/v1/cli/credentials/aws
+[backend] Using AWS credentials from backend
+```
+
+See `internal/backend/client.go:73`.
+
+### Routing decisions
+
+See which agent handles your query:
+
+```
+Keyword inference: AWS=true, GitHub=false, Terraform=false, K8s=false, GCP=false
+[routing] Ambiguous query detected, using LLM for classification...
+LLM override: AWS=true, K8s=false, GCP=false, Azure=false, Cloudflare=false
+```
+
+For programmatic routing inspection:
+
+```bash
+clanker ask "show pod status" --route-only
+```
+
+**Output**:
+
+```json
+{
+  "agent": "k8s",
+  "reason": "Query mentions kubernetes resources (pod)"
+}
+```
+
+See `cmd/ask.go:105`.
+
+### Kubernetes operations
+
+K8s agent debugging shows:
+
+```
+[k8s] Using cluster: production (type: eks)
+[k8s] Updating kubeconfig for EKS cluster...
+[k8s] Executing kubectl: get pods --all-namespaces -o json
+[k8s] Found 47 pods across 8 namespaces
+```
+
+See `internal/k8s/llm.go:40`.
+
+### IAM operations
+
+IAM agent debugging includes:
+
+```
+[iam] Analyzing role: arn:aws:iam::123456789012:role/LambdaExecutionRole
+[iam] Found 3 attached policies
+[iam] Checking trust relationships...
+```
+
+See `internal/iam/llm.go:35`.
+
+## Debug output examples
+
+### Full debug trace
+
+```bash
+clanker ask "list s3 buckets" --aws --debug
+```
+
+<CodeGroup>
+
+```text Output
+Using config file: /Users/you/.clanker.yaml
+🤖 Agent starting investigation of query: list s3 buckets
+🧠 Semantic Analysis: Intent=query (85.0% confidence), Urgency=low, Services=[s3]
+🎯 Maximum investigation steps: 3
+🌳 Decision tree analysis: 2 applicable nodes found
+  📊 Node: S3 Operations (priority: 8, agents: [infrastructure])
+  📊 Node: General AWS Query (priority: 5, agents: [log])
+📊 Executing order group 2 with 1 agents
+  ✨ Started infrastructure agent (ID: infrastructure-abc123) with dependencies
+🤖 Agent infrastructure-abc123 (infrastructure) executing 1 operations
+🔧 AWS Operation: list_s3_buckets
+💻 Executing AWS CLI: aws s3api list-buckets --output json
+✅ AWS operation completed (0.8s)
+✅ Agent infrastructure-abc123 completed operation: list_s3_buckets
+✅ Agent infrastructure completed, provided data: [service_config deployment_status resource_health]
+✅ Order group 2 completed
+🎉 All 1 agents completed (1 successful, 0 failed)
+
+🤖 Creating LLM request with provider: gemini-api, model: gemini-2.5-flash
+📊 Context size: 1,247 tokens
+💬 User prompt size: 18 tokens
+
+Your S3 buckets:
+
+1. **prod-data-bucket** (Created: 2024-01-15)
+2. **staging-assets** (Created: 2024-02-20)
+3. **logs-archive** (Created: 2023-11-05)
+```
+
+</CodeGroup>
+
+### Maker plan generation
+
+```bash
+clanker ask "create a lambda function" --maker --debug
+```
+
+```text
+[maker] provider=aws (default)
+🤖 Generating maker plan with provider: openai, model: gpt-5
+📊 Plan prompt size: 3,421 tokens
+💬 Sending plan generation request...
+✅ Plan generated successfully (2.1s)
+📋 Plan validation: version=1, commands=4, provider=aws
+```
+
+### Credential resolution
+
+```bash
+clanker ask "test" --gcp --debug
+```
+
+```text
+[backend] GET /api/v1/cli/credentials/gcp
+[backend] Using GCP credentials from backend
+Successfully created GCP client with project: my-project-123
+```
+
+## Common debug scenarios
+
+### Why isn't my query using the right agent?
+
+Check routing with `--route-only`:
+
+```bash
+clanker ask "check cloudflare dns" --route-only
+```
+
+If the wrong agent is selected, use an explicit flag:
+
+```bash
+clanker ask "check cloudflare dns" --cloudflare --debug
+```
+
+### Why are AWS operations failing?
+
+Enable debug mode to see the exact CLI commands:
+
+```bash
+clanker ask "list ec2 instances" --aws --debug 2>&1 | grep "aws "
+```
+
+Example output:
+
+```text
+💻 Executing AWS CLI: aws ec2 describe-instances --region us-east-1 --output json
+```
+
+Test the command directly:
+
+```bash
+aws ec2 describe-instances --region us-east-1 --output json --profile your-profile
+```
+
+### Which AI provider is being used?
+
+Debug mode shows provider resolution:
+
+```text
+🤖 Creating LLM request with provider: gemini-api, model: gemini-2.5-flash
+```
+
+Override with flags:
+
+```bash
+clanker ask "test" --ai-profile openai --openai-key "$OPENAI_API_KEY" --debug
+```
+
+### Are my credentials being loaded from backend?
+
+Look for backend messages:
+
+```text
+[backend] GET /api/v1/cli/credentials/aws
+[backend] Using AWS credentials from backend
+```
+
+If missing:
+
+```text
+[backend] No AWS credentials available (unauthorized: invalid API key), falling back to local
+```
+
+Verify your API key:
+
+```bash
+clanker credentials list --api-key "$CLANKER_BACKEND_API_KEY" --debug
+```
+
+### Why is agent trace not showing?
+
+Agent trace requires explicit flag or config:
+
+```bash
+# With flag
+clanker ask "test" --agent-trace
+
+# Or in config
+echo "agent:\n  trace: true" >> ~/.clanker.yaml
+```
+
+<Warning>
+Agent trace is separate from `--debug`. You typically want both:
+
+```bash
+clanker ask "show errors" --debug --agent-trace
+```
+</Warning>
+
+## Debugging configuration
+
+### Verify config loading
+
+```bash
+clanker ask "test" --debug 2>&1 | head -1
+```
+
+**Expected**:
+
+```text
+Using config file: /Users/you/.clanker.yaml
+```
+
+**If not found**:
+
+```bash
+cp .clanker.example.yaml ~/.clanker.yaml
+```
+
+### Check profile resolution
+
+```bash
+clanker profiles
+```
+
+**Output**:
+
+```text
+Available AWS Profiles (default: dev):
+
+  dev (default)
+    Region: us-east-1
+    Description: Development environment
+
+  prod
+    Region: us-east-1
+    Description: Production environment
+```
+
+See `cmd/profiles.go:10`.
+
+### Inspect AI provider config
+
+```bash
+grep -A 5 "ai:" ~/.clanker.yaml
+```
+
+**Example**:
+
+```yaml
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+```
+
+## Performance debugging
+
+### Measure operation timing
+
+Debug mode includes operation duration:
+
+```text
+✅ AWS operation completed (1.2s)
+✅ Parallel operations completed: 5 successful, 0 failed (3.4s)
+🎉 All 3 agents completed (3 successful, 0 failed)
+```
+
+### Check prompt token counts
+
+```text
+📊 Context size: 1,247 tokens
+💬 User prompt size: 18 tokens
+```
+
+Large contexts slow down LLM responses. Consider scoping your query:
+
+```bash
+# Instead of:
+clanker ask "show everything" --discovery
+
+# Use:
+clanker ask "show lambda errors"
+```
+
+### Monitor parallel execution
+
+With `--agent-trace`, see how many agents run concurrently:
+
+```text
+📊 Executing order group 1 with 3 agents
+  ✨ Started log agent (ID: log-1234) with dependencies
+  ✨ Started metrics agent (ID: metrics-5678) with dependencies
+  ✨ Started k8s agent (ID: k8s-9012) with dependencies
+```
+
+All three agents in order group 1 execute in parallel, reducing total time.
+
+## Environment variables
+
+These environment variables affect debug output:
+
+| Variable | Effect |
+|----------|--------|
+| `CLANKER_DEBUG=1` | Same as `--debug` flag |
+| `AWS_PROFILE` | Override default AWS profile |
+| `AWS_REGION` | Override default AWS region |
+| `GEMINI_API_KEY` | Gemini API key (shown as `***` in debug output) |
+| `OPENAI_API_KEY` | OpenAI API key (shown as `***` in debug output) |
+| `CLANKER_BACKEND_API_KEY` | Backend API key for credential storage |
+
+Debug mode never prints full API keys or credentials.
+
+## Troubleshooting tips
+
+<AccordionGroup>
+  <Accordion title="No output from clanker ask" icon="circle-question">
+    Check if output is being buffered. Force flush:
+    
+    ```bash
+    clanker ask "test" --debug 2>&1 | cat
+    ```
+    
+    Or check for errors in stderr:
+    
+    ```bash
+    clanker ask "test" 2>&1
+    ```
+  </Accordion>
+  
+  <Accordion title="AWS CLI commands fail" icon="aws">
+    Debug mode shows the exact command. Test it manually:
+    
+    ```bash
+    clanker ask "list ec2" --debug 2>&1 | grep "Executing AWS CLI"
+    # Copy the command and run it
+    aws ec2 describe-instances --region us-east-1 --profile dev
+    ```
+    
+    Common issues:
+    - Wrong profile or region
+    - Expired credentials
+    - Missing IAM permissions
+  </Accordion>
+  
+  <Accordion title="Agent doesn't spawn" icon="robot">
+    Use `--agent-trace` to see decision tree evaluation:
+    
+    ```bash
+    clanker ask "your query" --agent-trace
+    ```
+    
+    Look for "Decision tree analysis: 0 applicable nodes" — this means no patterns matched. Try:
+    - More specific keywords ("lambda errors" vs "show me stuff")
+    - Explicit flags (`--aws`, `--cloudflare`, etc.)
+  </Accordion>
+  
+  <Accordion title="Slow responses" icon="clock">
+    Check operation timing in debug output:
+    
+    ```text
+    ✅ AWS operation completed (15.2s)  ← Slow!
+    ```
+    
+    Possible causes:
+    - Large AWS resource counts (many EC2s, logs, etc.)
+    - Slow AWS API responses
+    - Network latency
+    
+    Optimize with scoped queries:
+    
+    ```bash
+    # Instead of:
+    clanker ask "show all resources" --discovery
+    
+    # Use:
+    clanker ask "show lambda functions in production"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Debug log locations
+
+Clanker writes debug output to stderr, normal responses to stdout:
+
+```bash
+# Save debug logs
+clanker ask "test" --debug 2> debug.log
+
+# Save response only
+clanker ask "test" > response.txt
+
+# Save both
+clanker ask "test" --debug > response.txt 2> debug.log
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Agent architecture" icon="diagram-project" href="/advanced/agent-architecture">
+    How agents coordinate and execute
+  </Card>
+  
+  <Card title="Backend API" icon="cloud" href="/advanced/backend-api">
+    Debug credential loading from backend
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Config file structure and defaults
+  </Card>
+  
+  <Card title="CLI reference" icon="terminal" href="/commands/ask">
+    Command flags and options
+  </Card>
+</CardGroup>

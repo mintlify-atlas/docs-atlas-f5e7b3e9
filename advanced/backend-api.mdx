@@ -1,0 +1,644 @@
+---
+title: Backend API
+description: Store and retrieve cloud credentials across machines using Clanker's backend API
+---
+
+The Clanker backend provides secure credential storage and retrieval, allowing you to sync cloud provider credentials across multiple machines without managing local credential files.
+
+## Overview
+
+Instead of configuring AWS, GCP, Azure, Cloudflare, and Kubernetes credentials on every machine, store them once in the Clanker backend and retrieve them with an API key.
+
+**Benefits**:
+- **Single source of truth**: Update credentials in one place
+- **Multi-machine sync**: Same credentials on laptop, server, CI/CD
+- **Secure storage**: Credentials encrypted at rest
+- **No local credential files**: Reduces credential sprawl
+- **Easy rotation**: Update once, applies everywhere
+
+## Configuration
+
+Set backend credentials in your config file:
+
+```yaml .clanker.yaml
+backend:
+  # API key for authentication (or set CLANKER_BACKEND_API_KEY)
+  api_key: "your-api-key-here"
+  
+  # Environment: testing, staging, or production
+  env: "testing"
+  
+  # Optional: Custom backend URL (overrides env)
+  # url: "https://custom-url.example.com"
+```
+
+Or use environment variables:
+
+```bash
+export CLANKER_BACKEND_API_KEY="your-api-key"
+export CLANKER_BACKEND_ENV="testing"  # optional
+export CLANKER_BACKEND_URL="https://..."  # optional
+```
+
+Or pass as flags:
+
+```bash
+clanker ask "test" --api-key "your-key" --backend-env "testing"
+```
+
+See `cmd/root.go:40` for backend flags.
+
+## Storing credentials
+
+### AWS credentials
+
+Store credentials from an existing AWS profile:
+
+```bash
+clanker credentials store aws --profile dev
+```
+
+This reads from `~/.aws/credentials` and uploads:
+- Access key ID
+- Secret access key
+- Region (from profile config)
+- Session token (if present)
+
+Or provide credentials directly:
+
+```bash
+clanker credentials store aws \
+  --access-key-id "AKIA..." \
+  --secret-access-key "..." \
+  --region "us-east-1"
+```
+
+**API endpoint**: `PUT /api/v1/secrets/aws`
+
+**Request body**:
+
+```json
+{
+  "provider": "aws",
+  "credentials": {
+    "access_key_id": "AKIA...",
+    "secret_access_key": "...",
+    "region": "us-east-1",
+    "session_token": "..."  // optional
+  }
+}
+```
+
+See `internal/backend/client.go:237`.
+
+### GCP credentials
+
+Store GCP service account credentials:
+
+```bash
+clanker credentials store gcp \
+  --project-id "my-project" \
+  --service-account-json "$(cat service-account.json)"
+```
+
+**API endpoint**: `PUT /api/v1/secrets/gcp`
+
+**Request body**:
+
+```json
+{
+  "provider": "gcp",
+  "credentials": {
+    "project_id": "my-project",
+    "service_account_json": "{\"type\":\"service_account\",...}"
+  }
+}
+```
+
+See `internal/backend/client.go:264`.
+
+### Azure credentials
+
+Store Azure service principal credentials:
+
+```bash
+clanker credentials store azure \
+  --subscription-id "..." \
+  --tenant-id "..." \
+  --client-id "..." \
+  --client-secret "..."
+```
+
+**API endpoint**: `PUT /api/v1/secrets/azure`
+
+**Request body**:
+
+```json
+{
+  "provider": "azure",
+  "credentials": {
+    "subscription_id": "...",
+    "tenant_id": "...",
+    "client_id": "...",
+    "client_secret": "..."
+  }
+}
+```
+
+See `internal/backend/client.go:346`.
+
+### Cloudflare credentials
+
+Store Cloudflare API token:
+
+```bash
+clanker credentials store cloudflare \
+  --api-token "..." \
+  --account-id "..." \
+  --zone-id "..."  # optional
+```
+
+**API endpoint**: `PUT /api/v1/secrets/cloudflare`
+
+**Request body**:
+
+```json
+{
+  "provider": "cloudflare",
+  "credentials": {
+    "api_token": "...",
+    "account_id": "...",
+    "zone_id": "..."  // optional
+  }
+}
+```
+
+See `internal/backend/client.go:291`.
+
+### Kubernetes credentials
+
+Store kubeconfig content:
+
+```bash
+clanker credentials store kubernetes \
+  --kubeconfig "$(cat ~/.kube/config)" \
+  --context "production"  # optional
+```
+
+**API endpoint**: `PUT /api/v1/secrets/kubernetes`
+
+**Request body**:
+
+```json
+{
+  "provider": "kubernetes",
+  "credentials": {
+    "kubeconfig_content": "apiVersion: v1\nkind: Config\n...",
+    "context_name": "production"  // optional
+  }
+}
+```
+
+See `internal/backend/client.go:318`.
+
+## Retrieving credentials
+
+Clanker automatically retrieves credentials from the backend when you provide an API key.
+
+### Automatic retrieval
+
+```bash
+# Set API key once
+export CLANKER_BACKEND_API_KEY="your-key"
+
+# Credentials loaded automatically
+clanker ask "list ec2 instances" --aws
+```
+
+**Debug output**:
+
+```text
+[backend] GET /api/v1/cli/credentials/aws
+[backend] Using AWS credentials from backend
+```
+
+If backend credentials aren't available, Clanker falls back to local credentials:
+
+```text
+[backend] No AWS credentials available (not found), falling back to local
+```
+
+See `cmd/ask.go:638`.
+
+### Manual listing
+
+List all stored credentials:
+
+```bash
+clanker credentials list --api-key "your-key"
+```
+
+**Output**:
+
+```text
+Stored Credentials:
+
+  Provider: aws
+  Created:  2024-03-15 10:30:00
+  Updated:  2024-03-20 14:15:00
+  Masked:   access_key_id=AKIA***, region=us-east-1
+
+  Provider: gcp
+  Created:  2024-03-16 09:00:00
+  Updated:  2024-03-16 09:00:00
+  Masked:   project_id=my-project
+
+  Provider: cloudflare
+  Created:  2024-03-18 16:45:00
+  Updated:  2024-03-18 16:45:00
+  Masked:   account_id=abc***
+```
+
+**API endpoint**: `GET /api/v1/cli/credentials`
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "provider": "aws",
+      "created_at": "2024-03-15T10:30:00Z",
+      "updated_at": "2024-03-20T14:15:00Z",
+      "masked": {
+        "access_key_id": "AKIA***",
+        "region": "us-east-1"
+      }
+    }
+  ]
+}
+```
+
+See `internal/backend/client.go:373`.
+
+## Deleting credentials
+
+Remove stored credentials:
+
+```bash
+clanker credentials delete aws --api-key "your-key"
+```
+
+**API endpoint**: `DELETE /api/v1/secrets/aws`
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "message": "Credentials deleted successfully"
+}
+```
+
+See `internal/backend/client.go:396`.
+
+## Backend environments
+
+Clanker supports multiple backend environments:
+
+| Environment | URL | Purpose |
+|-------------|-----|----------|
+| `testing` | `https://lychaz5ra6.execute-api.us-east-1.amazonaws.com/testing` | Development and testing |
+| `staging` | `https://2gjp7z6bxi.execute-api.us-east-1.amazonaws.com/staging` | Pre-production validation |
+| `production` | (TBD) | Production use |
+
+Set the environment:
+
+```yaml .clanker.yaml
+backend:
+  env: "staging"
+```
+
+Or override with a custom URL:
+
+```yaml .clanker.yaml
+backend:
+  url: "https://your-custom-backend.example.com"
+```
+
+See `internal/backend/resolver.go` for URL resolution.
+
+## API client implementation
+
+### Client structure
+
+```go
+type Client struct {
+    apiKey     string
+    baseURL    string
+    httpClient *http.Client
+    debug      bool
+}
+
+func NewClient(apiKey string, debug bool) *Client {
+    return &Client{
+        apiKey:  apiKey,
+        baseURL: ResolveBackendURL(),
+        httpClient: &http.Client{
+            Timeout: 30 * time.Second,
+        },
+        debug: debug,
+    }
+}
+```
+
+See `internal/backend/client.go:20`.
+
+### Authentication
+
+All requests include the API key in the `X-API-Key` header:
+
+```go
+req.Header.Set("X-API-Key", c.apiKey)
+req.Header.Set("Content-Type", "application/json")
+```
+
+See `internal/backend/client.go:70`.
+
+### Error handling
+
+The client handles common HTTP error codes:
+
+| Status | Error |
+|--------|-------|
+| 401 | `unauthorized: invalid API key` |
+| 404 | `not found: credential or resource does not exist` |
+| 400+ | Parse error message from response body |
+
+**Example**:
+
+```go
+if resp.StatusCode == http.StatusUnauthorized {
+    return nil, fmt.Errorf("unauthorized: invalid API key")
+}
+
+if resp.StatusCode >= 400 {
+    var apiResp APIResponse
+    if err := json.Unmarshal(respBody, &apiResp); err == nil && apiResp.Error != "" {
+        return nil, fmt.Errorf("API error: %s", apiResp.Error)
+    }
+    return nil, fmt.Errorf("API error: status %d", resp.StatusCode)
+}
+```
+
+See `internal/backend/client.go:88`.
+
+## Credential types
+
+### AWS credentials
+
+```go
+type AWSCredentials struct {
+    AccessKeyID     string `json:"access_key_id"`
+    SecretAccessKey string `json:"secret_access_key"`
+    Region          string `json:"region,omitempty"`
+    SessionToken    string `json:"session_token,omitempty"`
+}
+```
+
+See `internal/backend/types.go:5`.
+
+### GCP credentials
+
+```go
+type GCPCredentials struct {
+    ProjectID          string `json:"project_id"`
+    ServiceAccountJSON string `json:"service_account_json,omitempty"`
+}
+```
+
+See `internal/backend/types.go:13`.
+
+### Azure credentials
+
+```go
+type AzureCredentials struct {
+    SubscriptionID string `json:"subscription_id"`
+    TenantID       string `json:"tenant_id,omitempty"`
+    ClientID       string `json:"client_id,omitempty"`
+    ClientSecret   string `json:"client_secret,omitempty"`
+}
+```
+
+See `internal/backend/types.go:32`.
+
+### Cloudflare credentials
+
+```go
+type CloudflareCredentials struct {
+    APIToken  string `json:"api_token"`
+    AccountID string `json:"account_id,omitempty"`
+    ZoneID    string `json:"zone_id,omitempty"`
+}
+```
+
+See `internal/backend/types.go:19`.
+
+### Kubernetes credentials
+
+```go
+type KubernetesCredentials struct {
+    KubeconfigContent string `json:"kubeconfig_content"`
+    ContextName       string `json:"context_name,omitempty"`
+}
+```
+
+See `internal/backend/types.go:26`.
+
+## Fallback behavior
+
+Clanker always tries backend credentials first, then falls back to local configuration:
+
+1. **Check for backend API key** (flag, env var, or config)
+2. **If API key exists**: Try to retrieve credentials from backend
+3. **If backend succeeds**: Use backend credentials
+4. **If backend fails** (not found, unauthorized, etc.): Fall back to local credentials
+
+**Example flow** (AWS):
+
+```go
+backendAPIKey := backend.ResolveAPIKey(apiKeyFlag)
+
+if backendAPIKey != "" {
+    backendClient := backend.NewClient(backendAPIKey, debug)
+    backendCreds, backendErr := backendClient.GetAWSCredentials(ctx)
+    if backendErr == nil {
+        // Use backend credentials
+        awsClient, err = aws.NewClientWithCredentials(ctx, &aws.BackendAWSCredentials{
+            AccessKeyID:     backendCreds.AccessKeyID,
+            SecretAccessKey: backendCreds.SecretAccessKey,
+            Region:          backendCreds.Region,
+        }, debug)
+    } else {
+        // Fall back to local profile
+        awsClient, err = aws.NewClientWithProfileAndDebug(ctx, targetProfile, debug)
+    }
+}
+```
+
+See `cmd/ask.go:638`.
+
+## Security considerations
+
+<Warning>
+**Never commit your API key or credentials to version control.**
+
+Use environment variables or local config files (ensure `~/.clanker.yaml` is in `.gitignore`).
+</Warning>
+
+### API key protection
+
+```bash
+# Store API key in environment variable
+echo 'export CLANKER_BACKEND_API_KEY="your-key"' >> ~/.zshrc
+source ~/.zshrc
+
+# Or use a password manager
+clanker ask "test" --api-key "$(security find-generic-password -s clanker-api-key -w)"
+```
+
+### Credential rotation
+
+When rotating cloud provider credentials:
+
+1. Generate new credentials in your cloud provider console
+2. Update backend storage:
+   ```bash
+   clanker credentials store aws --profile new-profile
+   ```
+3. Verify retrieval:
+   ```bash
+   clanker credentials list --debug
+   ```
+4. Delete old credentials from cloud provider
+
+### Audit trail
+
+The backend tracks creation and update timestamps:
+
+```bash
+clanker credentials list
+```
+
+```text
+Provider: aws
+Created:  2024-03-15 10:30:00
+Updated:  2024-03-20 14:15:00  ← Last rotation
+```
+
+## Troubleshooting
+
+### Invalid API key
+
+**Error**:
+
+```text
+failed to get AWS credentials: unauthorized: invalid API key
+```
+
+**Solution**:
+
+Check your API key:
+
+```bash
+echo $CLANKER_BACKEND_API_KEY
+```
+
+Or verify in config:
+
+```bash
+grep api_key ~/.clanker.yaml
+```
+
+### Credentials not found
+
+**Error**:
+
+```text
+failed to get AWS credentials: not found: credential or resource does not exist
+```
+
+**Solution**:
+
+Store credentials first:
+
+```bash
+clanker credentials store aws --profile dev
+```
+
+Verify storage:
+
+```bash
+clanker credentials list
+```
+
+### Backend timeout
+
+**Error**:
+
+```text
+request failed: context deadline exceeded
+```
+
+**Solution**:
+
+Check network connectivity and backend URL:
+
+```bash
+curl -I https://lychaz5ra6.execute-api.us-east-1.amazonaws.com/testing/api/v1/cli/credentials
+```
+
+The default timeout is 30 seconds (see `internal/backend/client.go:34`).
+
+### Wrong backend environment
+
+**Error**:
+
+```text
+API error: status 404
+```
+
+**Solution**:
+
+Verify backend environment:
+
+```bash
+clanker credentials list --backend-env "testing" --debug
+```
+
+Expected debug output:
+
+```text
+[backend] GET /api/v1/cli/credentials
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Config file and backend setup
+  </Card>
+  
+  <Card title="Debugging" icon="bug" href="/advanced/debugging">
+    Debug credential retrieval
+  </Card>
+  
+  <Card title="Credentials command" icon="key" href="/commands/credentials">
+    CLI reference for credential management
+  </Card>
+  
+  <Card title="Security" icon="shield" href="/guides/security">
+    Best practices for credential management
+  </Card>
+</CardGroup>

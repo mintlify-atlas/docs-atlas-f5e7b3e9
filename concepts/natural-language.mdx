@@ -1,0 +1,360 @@
+---
+title: Natural language
+description: How Clanker understands and routes your infrastructure questions
+---
+
+Clanker uses a multi-stage natural language processing pipeline to interpret your questions and route them to the appropriate cloud provider agents.
+
+## Query routing
+
+When you run `clanker ask`, your question goes through a routing system that determines which agent(s) should handle it:
+
+<Steps>
+  <Step title="Extract question">
+    If the prompt contains chat history, extract the last user turn:
+    
+    ```go cmd/ask.go:1274-1318
+    func questionForRouting(question string) string {
+        trimmed := strings.TrimSpace(question)
+        if trimmed == "" {
+            return trimmed
+        }
+
+        // If the prompt contains a chat transcript (as emitted by clanker-cloud),
+        // route based on the last explicit user turn.
+        start := strings.LastIndex(trimmed, "\nYou\n")
+        startLen := len("\nYou\n")
+        if start == -1 && strings.HasPrefix(trimmed, "You\n") {
+            start = 0
+            startLen = len("You\n")
+        }
+
+        if start != -1 {
+            candidate := trimmed[start+startLen:]
+            // End at next assistant turn marker if present.
+            if end := strings.Index(candidate, "\n\nClanker\n"); end != -1 {
+                candidate = candidate[:end]
+            } else if end := strings.Index(candidate, "\nClanker\n"); end != -1 {
+                candidate = candidate[:end]
+            }
+            candidate = strings.TrimSpace(candidate)
+            if candidate != "" {
+                return candidate
+            }
+        }
+
+        return trimmed
+    }
+    ```
+  </Step>
+  
+  <Step title="Keyword inference">
+    Check for explicit provider/service keywords:
+    
+    - **AWS**: `ec2`, `lambda`, `s3`, `rds`, `cloudwatch`, `ecs`, `eks`
+    - **GCP**: `gcloud`, `compute engine`, `cloud run`, `bigquery`
+    - **Azure**: `azure`, `app service`, `cosmos db`
+    - **Cloudflare**: `cloudflare`, `workers`, `waf`, `dns`
+    - **Kubernetes**: `kubectl`, `pod`, `deployment`, `namespace`
+    - **Terraform**: `terraform`, `tfstate`, `workspace`
+  </Step>
+  
+  <Step title="LLM classification (if ambiguous)">
+    If multiple services are detected or Cloudflare is mentioned, use an LLM to make the final routing decision.
+    
+    See [`internal/routing/classifier.go`](https://github.com/bgdnvk/clanker/blob/main/internal/routing/classifier.go) for the classification prompt.
+  </Step>
+  
+  <Step title="Agent dispatch">
+    Route to the appropriate agent:
+    - **AWS agent** (`internal/aws/`)
+    - **GCP agent** (`internal/gcp/`)
+    - **Azure agent** (`internal/azure/`)
+    - **Cloudflare agent** (`internal/cloudflare/`)
+    - **K8s agent** (`internal/k8s/`)
+    - **IAM agent** (`internal/iam/`)
+  </Step>
+</Steps>
+
+## Semantic intent analysis
+
+For AWS queries, Clanker performs semantic analysis to understand **what you're trying to do** without calling external APIs.
+
+### Intent classification
+
+The semantic analyzer scores your query against these intent types:
+
+| Intent | Example keywords | Use case |
+|--------|------------------|----------|
+| `troubleshoot` | error, fail, broken, issue, problem | Debug failing services |
+| `monitor` | status, health, running, uptime | Check service health |
+| `analyze` | performance, slow, bottleneck, optimize | Performance investigation |
+| `deploy` | deploy, launch, create, provision | Infrastructure changes |
+| `security` | access, permission, vulnerability, exposed | Security audits |
+| `cost` | cost, billing, spend, expensive | Cost optimization |
+
+<CodeGroup>
+```go internal/agent/semantic/analyzer.go:39-56
+intentScores := make(map[string]float64)
+for intentType, signals := range sa.IntentSignals {
+    score := 0.0
+    for _, word := range words {
+        if weight, exists := signals[word]; exists {
+            score += weight
+        }
+    }
+    intentScores[intentType] = score
+}
+
+// Select highest-scoring intent
+maxScore := 0.0
+for intentType, score := range intentScores {
+    if score > maxScore {
+        maxScore = score
+        intent.Primary = intentType
+    }
+}
+```
+</CodeGroup>
+
+### Urgency detection
+
+Keywords are weighted to determine urgency:
+
+| Urgency | Score threshold | Keywords |
+|---------|-----------------|----------|
+| Critical | ≥ 1.0 | down, outage, emergency, critical |
+| High | 0.7 - 0.99 | error, fail, broken, urgent |
+| Medium | 0.3 - 0.69 | slow, issue, problem, warning |
+| Low | < 0.3 | (default) |
+
+<CodeGroup>
+```go internal/agent/semantic/analyzer.go:71-86
+urgencyScore := 0.0
+for _, word := range words {
+    if weight, exists := sa.UrgencyKeywords[word]; exists {
+        urgencyScore += weight
+    }
+}
+switch {
+case urgencyScore >= 1.0:
+    intent.Urgency = "critical"
+case urgencyScore >= 0.7:
+    intent.Urgency = "high"
+case urgencyScore >= 0.3:
+    intent.Urgency = "medium"
+default:
+    intent.Urgency = "low"
+}
+```
+</CodeGroup>
+
+### Timeframe inference
+
+Certain keywords map to investigation timeframes:
+
+- **now** / **current** → `recent` (last 1 hour)
+- **today** → `today` (last 24 hours)
+- **yesterday** → `yesterday`
+- **week** → `week` (last 7 days)
+- **month** → `month` (last 30 days)
+
+### Service identification
+
+The analyzer maintains a mapping of keywords to AWS services:
+
+<CodeGroup>
+```go internal/agent/semantic/analyzer.go:62-69
+for service, keywords := range sa.ServiceMapping {
+    for _, keyword := range keywords {
+        if strings.Contains(queryLower, keyword) {
+            intent.TargetServices = append(intent.TargetServices, service)
+            break
+        }
+    }
+}
+```
+</CodeGroup>
+
+Example service mappings:
+- `lambda`, `function` → `lambda`
+- `ec2`, `instance`, `server` → `ec2`
+- `s3`, `bucket` → `s3`
+- `rds`, `database`, `postgres`, `mysql` → `rds`
+- `cloudwatch`, `logs`, `metrics` → `cloudwatch`
+
+## Query examples
+
+Here's how different questions are interpreted:
+
+<Tabs>
+  <Tab title="Troubleshooting">
+    **Question**: "Why is my Lambda function timing out?"
+    
+    ```json
+    {
+      "primary": "troubleshoot",
+      "confidence": 0.82,
+      "target_services": ["lambda", "cloudwatch"],
+      "urgency": "high",
+      "time_frame": "recent",
+      "data_types": ["logs", "metrics", "status"]
+    }
+    ```
+    
+    **Agents spawned**: Log agent, Metrics agent, Infrastructure agent
+  </Tab>
+  
+  <Tab title="Monitoring">
+    **Question**: "Show me the status of all my EC2 instances"
+    
+    ```json
+    {
+      "primary": "monitor",
+      "confidence": 0.75,
+      "target_services": ["ec2"],
+      "urgency": "low",
+      "time_frame": "recent",
+      "data_types": ["status", "metrics"]
+    }
+    ```
+    
+    **Agents spawned**: Infrastructure agent, Metrics agent
+  </Tab>
+  
+  <Tab title="Performance">
+    **Question**: "What's causing slow response times in my API Gateway?"
+    
+    ```json
+    {
+      "primary": "analyze",
+      "confidence": 0.88,
+      "target_services": ["apigateway", "lambda"],
+      "urgency": "medium",
+      "time_frame": "recent",
+      "data_types": ["logs", "metrics"]
+    }
+    ```
+    
+    **Agents spawned**: Log agent, Metrics agent, Performance agent
+  </Tab>
+  
+  <Tab title="Security">
+    **Question**: "List all publicly accessible S3 buckets"
+    
+    ```json
+    {
+      "primary": "security",
+      "confidence": 0.79,
+      "target_services": ["s3"],
+      "urgency": "medium",
+      "time_frame": "recent",
+      "data_types": ["config", "status"]
+    }
+    ```
+    
+    **Agents spawned**: Infrastructure agent, Security agent
+  </Tab>
+</Tabs>
+
+## Provider-specific routing
+
+### Cloudflare queries
+
+Cloudflare questions are routed to specialized sub-agents:
+
+<CodeGroup>
+```go cmd/ask.go:1365-1402
+questionLower := strings.ToLower(question)
+
+// Check for WAF/Security queries
+isWAF := strings.Contains(questionLower, "firewall") ||
+    strings.Contains(questionLower, "waf") ||
+    strings.Contains(questionLower, "rate limit") ||
+    strings.Contains(questionLower, "security level") ||
+    strings.Contains(questionLower, "under attack") ||
+    strings.Contains(questionLower, "ddos") ||
+    strings.Contains(questionLower, "bot")
+
+if isWAF {
+    wafAgent := cfwaf.NewSubAgent(client, debug)
+    // ...
+}
+
+// Check for Workers queries
+isWorkers := strings.Contains(questionLower, "worker") ||
+    strings.Contains(questionLower, "kv") ||
+    strings.Contains(questionLower, "d1") ||
+    strings.Contains(questionLower, "r2") ||
+    strings.Contains(questionLower, "pages") ||
+    strings.Contains(questionLower, "durable object")
+
+if isWorkers {
+    workersAgent := cfworkers.NewSubAgent(client, debug)
+    // ...
+}
+```
+</CodeGroup>
+
+Sub-agents:
+- **WAF agent** (`internal/cloudflare/waf/`): Firewall rules, rate limiting, DDoS protection
+- **Workers agent** (`internal/cloudflare/workers/`): Workers, KV, D1, R2, Durable Objects
+- **Analytics agent** (`internal/cloudflare/analytics/`): Traffic, bandwidth, performance metrics
+- **Zero Trust agent** (`internal/cloudflare/zerotrust/`): Tunnels, Access apps, policies
+- **DNS agent** (`internal/cloudflare/dns/`): DNS records, zones
+
+### Kubernetes queries
+
+K8s questions are detected by keywords like `kubectl`, `pod`, `deployment`, `namespace`:
+
+```bash
+clanker ask "Show me all pods in the default namespace"
+```
+
+The K8s agent (`internal/k8s/`) handles cluster inspection, resource queries, and health checks.
+
+### IAM queries
+
+IAM/security questions are routed to the IAM agent:
+
+```bash
+clanker ask "What permissions does this role have?" --iam --role-arn arn:aws:iam::123456789012:role/MyRole
+```
+
+The IAM agent (`internal/iam/`) performs security analysis on roles, policies, and permissions.
+
+## Testing routing decisions
+
+Use `--route-only` to see how your question would be routed **without executing**:
+
+```bash
+clanker ask "Deploy a worker to Cloudflare" --route-only
+```
+
+Output:
+```json
+{
+  "agent": "cloudflare",
+  "reason": "LLM classification: keyword 'cloudflare' detected"
+}
+```
+
+<Tip>
+**Override routing**: Use explicit flags to force a specific provider:
+- `--aws`: Force AWS agent
+- `--gcp`: Force GCP agent
+- `--azure`: Force Azure agent
+- `--cloudflare`: Force Cloudflare agent
+- `--iam`: Force IAM agent
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="AI agents" href="/concepts/ai-agents" icon="robot">
+    Learn about the multi-agent architecture
+  </Card>
+  <Card title="Maker mode" href="/concepts/maker-mode" icon="wand-magic-sparkles">
+    Generate infrastructure plans from natural language
+  </Card>
+</CardGroup>

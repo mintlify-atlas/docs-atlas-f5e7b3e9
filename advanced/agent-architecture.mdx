@@ -1,0 +1,470 @@
+---
+title: Agent architecture
+description: Understanding Clanker's intelligent agent system and parallel execution workflow
+---
+
+Clanker's agent system transforms natural language questions into coordinated AWS telemetry investigations. The architecture employs semantic analysis, decision trees, and dependency-aware parallel execution to gather cloud infrastructure data efficiently.
+
+## System overview
+
+The agent package (`internal/agent/`) orchestrates intelligent context gathering through several specialized subsystems:
+
+```
+agent/
+├── agent.go          # High-level orchestrator and public entry points
+├── coordinator/      # Dependency-aware parallel execution driver
+├── decisiontree/     # Intent rules that map queries to agent types
+├── memory/           # Rolling knowledge of previous investigations
+├── model/            # Shared structs and type aliases
+└── semantic/         # Lightweight NLP classifier for intents
+```
+
+## Investigation flow
+
+When you run `clanker ask "what lambda functions are failing?"`, the agent follows this execution path:
+
+<Steps>
+  <Step title="Semantic analysis">
+    The `semantic.Analyzer` performs keyword-based intent classification without external NLP calls. It extracts:
+    
+    - **Primary intent** (troubleshoot, monitor, analyze)
+    - **Urgency level** (critical, high, medium, low)
+    - **Target services** (lambda, ecs, s3, etc.)
+    - **Time frame** (recent, last_hour, last_day)
+    - **Data types** (logs, metrics, status)
+    
+    See `internal/agent/semantic/analyzer.go:27`
+  </Step>
+  
+  <Step title="Decision tree traversal">
+    The decision tree maps semantic intent to concrete agent types and execution parameters:
+    
+    ```go
+    type Node struct {
+        ID         string
+        Name       string
+        Condition  string        // e.g., "contains_keywords(['error', 'fail'])"
+        Priority   int
+        AgentTypes []string      // e.g., ["log", "metrics"]
+        Parameters model.AWSData
+    }
+    ```
+    
+    Nodes are evaluated depth-first. Matching conditions spawn their configured agent types.
+    
+    See `internal/agent/decisiontree/tree.go:31`
+  </Step>
+  
+  <Step title="Dependency scheduling">
+    The `DependencyScheduler` groups agents by execution order:
+    
+    - **Order 1**: Independent collectors (log, metrics, k8s)
+    - **Order 2**: Infrastructure agents requiring basic data (infrastructure, deployment)
+    - **Order 3**: Analysis agents requiring enriched data (security, queue)
+    - **Order 4+**: Higher-order insights (cost, availability)
+    
+    Each agent declares required and provided data:
+    
+    ```go
+    AgentTypeLog = AgentType{
+        Name: "log",
+        Dependencies: Dependency{
+            ProvidedData:   []string{"logs", "error_patterns", "log_metrics"},
+            ExecutionOrder: 1,
+        },
+    }
+    
+    AgentTypeSecurity = AgentType{
+        Name: "security",
+        Dependencies: Dependency{
+            RequiredData:   []string{"logs", "service_config"},
+            ProvidedData:   []string{"security_status", "access_patterns"},
+            ExecutionOrder: 3,
+        },
+    }
+    ```
+    
+    See `internal/agent/coordinator/agent_types.go:5`
+  </Step>
+  
+  <Step title="Parallel execution">
+    Within each order group, agents run concurrently:
+    
+    ```go
+    for _, group := range planned {
+        var wg sync.WaitGroup
+        for _, cfg := range group.Agents {
+            if scheduler.Ready(cfg.AgentType, dataBus) {
+                agent := newParallelAgent(cfg)
+                registry.Register(agent)
+                wg.Add(1)
+                go runPlannedAgent(ctx, &wg, agent)
+            }
+        }
+        wg.Wait()
+    }
+    ```
+    
+    Each agent:
+    1. Copies the main context
+    2. Executes AWS operations (CLI calls or SDK methods)
+    3. Stores results in its local `Results` map
+    4. Publishes promised data to the `SharedDataBus`
+    
+    See `internal/agent/coordinator/coordinator.go:63`
+  </Step>
+  
+  <Step title="Result aggregation">
+    The coordinator merges all successful agent outputs:
+    
+    ```go
+    aggregated := make(model.AWSData)
+    for _, agent := range registry.Agents() {
+        if agent.Status != "completed" {
+            continue
+        }
+        agentKey := agent.Type.Name
+        aggregated[agentKey] = agent.Results
+        for key, value := range agent.Results {
+            aggregated[fmt.Sprintf("%s_%s", agentKey, key)] = value
+        }
+    }
+    ```
+    
+    Metadata includes execution counts, timestamps, and decision path.
+    
+    See `internal/agent/coordinator/coordinator.go:138`
+  </Step>
+  
+  <Step title="Context building">
+    The final context string merges:
+    
+    - Semantic analysis summary
+    - All parallel agent results (grouped by agent type)
+    - Service-specific log analysis
+    - Error patterns and metrics
+    - Agent reasoning chain (chain of thought)
+    
+    This structured context is fed to the LLM for final answer generation.
+    
+    See `internal/agent/agent.go:306`
+  </Step>
+</Steps>
+
+## Core components
+
+### Agent orchestrator
+
+The `Agent` type in `agent.go` wires everything together:
+
+```go
+type Agent struct {
+    client       *awsclient.Client
+    debug        bool
+    maxSteps     int
+    aiDecisionFn func(context.Context, string) (string, error)
+}
+
+func (a *Agent) InvestigateQuery(ctx context.Context, query string) (*AgentContext, error)
+```
+
+Key responsibilities:
+- Run semantic analysis
+- Traverse decision tree via coordinator
+- Spawn parallel agents or fall back to sequential planner
+- Build final context for LLM
+
+See `internal/agent/agent.go:42`
+
+### Coordinator
+
+The `Coordinator` drives dependency-tree-based parallel execution:
+
+```go
+type Coordinator struct {
+    DecisionTree *dt.Tree
+    MainContext  *model.AgentContext
+    client       *awsclient.Client
+    registry     *AgentRegistry
+    dataBus      *SharedDataBus
+    scheduler    *DependencyScheduler
+}
+```
+
+Public methods:
+- `Analyze(query string)` — traverse decision tree
+- `SpawnAgents(ctx, applicable)` — launch agents by dependency order
+- `WaitForCompletion(ctx, timeout)` — block until all agents finish
+- `AggregateResults()` — merge successful outputs
+- `Stats()` — execution metrics
+
+See `internal/agent/coordinator/coordinator.go:34`
+
+### Shared data bus
+
+The `SharedDataBus` stores dependency data produced by agents:
+
+```go
+type SharedDataBus struct {
+    mu   sync.RWMutex
+    data map[string]any
+}
+
+func (b *SharedDataBus) Store(key string, value any)
+func (b *SharedDataBus) Load(key string) (any, bool)
+func (b *SharedDataBus) HasAll(keys []string) bool
+```
+
+Agents publish data using keys from `ProvidedData`. Downstream agents check `RequiredData` before executing.
+
+See `internal/agent/coordinator/state.go:10`
+
+### Agent registry
+
+The `AgentRegistry` tracks running agents and maintains counters:
+
+```go
+type AgentStats struct {
+    Total     int
+    Completed int
+    Failed    int
+}
+
+type AgentRegistry struct {
+    mu     sync.RWMutex
+    agents []*ParallelAgent
+    stats  AgentStats
+}
+```
+
+Thread-safe methods:
+- `Register(agent)` — add agent and increment total
+- `MarkCompleted()` / `MarkFailed()` — update counters
+- `Agents()` — snapshot of all agents
+- `Stats()` — execution summary
+
+See `internal/agent/coordinator/state.go:58`
+
+## Agent types
+
+Clanker includes these built-in specialist agents:
+
+<AccordionGroup>
+  <Accordion title="Log agent" icon="file-lines">
+    **Execution order**: 1 (independent)
+    
+    **Provides**: `logs`, `error_patterns`, `log_metrics`
+    
+    **Operations**:
+    - Discover relevant log groups
+    - Sample recent log entries
+    - Filter error patterns
+    - Extract log stream metadata
+    
+    See `internal/agent/coordinator/agent_types.go:28`
+  </Accordion>
+  
+  <Accordion title="Metrics agent" icon="chart-line">
+    **Execution order**: 1 (independent)
+    
+    **Provides**: `metrics`, `performance_data`, `thresholds`
+    
+    **Operations**:
+    - Query CloudWatch metrics
+    - Check alarm states
+    - Aggregate performance data
+    
+    See `internal/agent/coordinator/agent_types.go:36`
+  </Accordion>
+  
+  <Accordion title="Infrastructure agent" icon="server">
+    **Execution order**: 2
+    
+    **Provides**: `service_config`, `deployment_status`, `resource_health`
+    
+    **Operations**:
+    - List EC2, ECS, Lambda resources
+    - Describe service configurations
+    - Check deployment status
+    
+    See `internal/agent/coordinator/agent_types.go:44`
+  </Accordion>
+  
+  <Accordion title="Security agent" icon="shield">
+    **Execution order**: 3
+    
+    **Requires**: `logs`, `service_config`
+    
+    **Provides**: `security_status`, `access_patterns`, `vulnerabilities`
+    
+    **Operations**:
+    - Analyze IAM policies
+    - Check security group rules
+    - Audit access logs
+    
+    See `internal/agent/coordinator/agent_types.go:52`
+  </Accordion>
+  
+  <Accordion title="Cost agent" icon="dollar-sign">
+    **Execution order**: 4
+    
+    **Requires**: `metrics`, `resource_health`
+    
+    **Provides**: `cost_analysis`, `usage_patterns`, `optimization_suggestions`
+    
+    **Operations**:
+    - Query Cost Explorer
+    - Analyze resource utilization
+    - Generate optimization recommendations
+    
+    See `internal/agent/coordinator/agent_types.go:61`
+  </Accordion>
+  
+  <Accordion title="K8s agent" icon="dharmachakra">
+    **Execution order**: 1 (independent)
+    
+    **Provides**: `k8s_resources`, `k8s_health`
+    
+    **Operations**:
+    - List pods, deployments, services
+    - Check resource status
+    - Gather cluster metrics
+    
+    See `internal/agent/coordinator/agent_types.go:20`
+  </Accordion>
+</AccordionGroup>
+
+## Sequential fallback
+
+When the decision tree returns no applicable nodes, the agent falls back to a traditional sequential approach:
+
+```go
+if len(applicableNodes) == 0 {
+    a.runSequentialPlanner(ctx, agentCtx)
+}
+```
+
+The sequential planner:
+1. Calls an LLM decision function to determine the next action
+2. Executes the chosen action (gather logs, metrics, etc.)
+3. Repeats until complete or `maxSteps` is reached
+
+This provides a safety net for queries that don't match decision tree patterns.
+
+See `internal/agent/planner.go:13`
+
+## Extending the system
+
+<Steps>
+  <Step title="Add a new agent type">
+    Define the agent in `internal/agent/coordinator/agent_types.go`:
+    
+    ```go
+    AgentTypeMonitoring = AgentType{
+        Name: "monitoring",
+        Dependencies: Dependency{
+            RequiredData:   []string{"metrics"},
+            ProvidedData:   []string{"alerts", "dashboards"},
+            ExecutionOrder: 3,
+        },
+    }
+    ```
+  </Step>
+  
+  <Step title="Register operations">
+    Add operations in `internal/agent/coordinator/operations.go`:
+    
+    ```go
+    func (c *Coordinator) getOperationsForAgentType(agt AgentType) []awsclient.LLMOperation {
+        switch agt.Name {
+        case "monitoring":
+            return []awsclient.LLMOperation{
+                {Operation: "list_cloudwatch_alarms", Parameters: map[string]any{}},
+            }
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Update decision tree">
+    Add decision tree nodes that spawn your agent:
+    
+    ```go
+    &Node{
+        ID:         "monitoring-check",
+        Name:       "Monitoring Analysis",
+        Condition:  "contains_keywords(['alert', 'alarm', 'dashboard'])",
+        Priority:   8,
+        AgentTypes: []string{"monitoring"},
+    }
+    ```
+  </Step>
+</Steps>
+
+<Info>
+Keep shared structs in `internal/agent/model/` to avoid circular imports. Run `gofmt` after edits and ensure `go build ./...` stays green.
+</Info>
+
+## Performance considerations
+
+<CardGroup cols={2}>
+  <Card title="Parallelism" icon="gauge-high">
+    Agents in the same execution order run concurrently, reducing total investigation time. Use `--agent-trace` to see lifecycle logs.
+  </Card>
+  
+  <Card title="Timeouts" icon="clock">
+    Each agent type has a `WaitTimeout` (typically 5-8 seconds). The coordinator waits up to 15 seconds for all agents to complete.
+  </Card>
+  
+  <Card title="Dependency checks" icon="link">
+    Agents only execute when their dependencies are satisfied on the data bus. This prevents wasted work and ensures data consistency.
+  </Card>
+  
+  <Card title="Graceful degradation" icon="shield-halved">
+    Failed agents don't block the pipeline. The coordinator aggregates whatever data is available and proceeds with partial results.
+  </Card>
+</CardGroup>
+
+## Debugging agent execution
+
+Enable detailed agent tracing:
+
+```bash
+clanker ask "show lambda errors" --agent-trace
+```
+
+This outputs:
+- Decision tree matches and priorities
+- Execution order groups
+- Agent start/completion events
+- Dependency satisfaction checks
+- Final aggregation stats
+
+Alternatively, set in config:
+
+```yaml .clanker.yaml
+agent:
+  trace: true
+```
+
+See `internal/agent/coordinator/coordinator.go:17` for the trace flag check.
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Debugging" icon="bug" href="/advanced/debugging">
+    Debug flags and trace output
+  </Card>
+  
+  <Card title="Backend API" icon="cloud" href="/advanced/backend-api">
+    Credential storage and multi-machine sync
+  </Card>
+  
+  <Card title="Custom profiles" icon="sliders" href="/advanced/custom-profiles">
+    AI provider configuration
+  </Card>
+  
+  <Card title="Ask command" icon="messages-question" href="/commands/ask">
+    Natural language queries
+  </Card>
+</CardGroup>

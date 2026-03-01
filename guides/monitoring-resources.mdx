@@ -1,0 +1,518 @@
+---
+title: Monitoring resources
+description: Monitor your cloud infrastructure health, metrics, and costs with Clanker
+---
+
+Clanker provides comprehensive monitoring capabilities across your cloud infrastructure. Use natural language queries to check resource health, view metrics, analyze costs, and detect anomalies.
+
+## Health monitoring
+
+### Check service status
+
+Use natural language to query the health of your services:
+
+```bash
+# Lambda functions
+clanker ask "What's the status of my Lambda functions?"
+clanker ask "Show me Lambda functions with high error rates"
+
+# EC2 instances
+clanker ask "Are all EC2 instances running?"
+clanker ask "Show me stopped or terminated instances"
+
+# RDS databases
+clanker ask "What's the current RDS instance status?"
+clanker ask "Show me RDS instances with low storage"
+
+# Load balancers
+clanker ask "What's the health status of my load balancers?"
+clanker ask "Show me unhealthy targets in my ALBs"
+```
+
+**Example response:**
+
+```markdown
+# Lambda Function Health Status
+
+## Healthy Functions (3)
+
+### api-handler
+- **Invocations (24h)**: 12,453
+- **Error Rate**: 0.2%
+- **Duration (avg)**: 245ms
+- **Throttles**: 0
+
+### image-processor
+- **Invocations (24h)**: 3,241
+- **Error Rate**: 0.1%
+- **Duration (avg)**: 1,823ms
+- **Throttles**: 0
+
+## Functions with Issues (1)
+
+### email-sender ⚠️
+- **Invocations (24h)**: 891
+- **Error Rate**: 12.3% (elevated)
+- **Duration (avg)**: 512ms
+- **Throttles**: 15 (capacity issue)
+- **Recent Errors**: 
+  - `Task timed out after 3.00 seconds` (8 occurrences)
+  - `Unable to connect to SMTP server` (102 occurrences)
+
+**Recommended Actions:**
+1. Increase timeout for email-sender (currently 3s)
+2. Check SMTP credentials in Secrets Manager
+3. Consider increasing reserved concurrency
+```
+
+### Kubernetes cluster health
+
+```bash
+# Cluster overview
+clanker k8s ask "tell me the health of my cluster"
+
+# Node status
+clanker k8s ask "are all nodes ready?"
+clanker k8s ask "show me nodes with resource pressure"
+
+# Pod health
+clanker k8s ask "show me pods that are not running"
+clanker k8s ask "which pods have been restarted recently?"
+
+# Resource capacity
+clanker k8s ask "how much CPU and memory is available?"
+```
+
+## Metrics and performance
+
+### CloudWatch metrics
+
+Query CloudWatch metrics naturally:
+
+```bash
+# CPU utilization
+clanker ask "Show me EC2 instances with high CPU usage"
+clanker ask "What's the CPU trend for my-instance over the last 24 hours?"
+
+# Memory and disk
+clanker ask "Show me instances with low disk space"
+clanker ask "What's the memory usage pattern for my Lambda?"
+
+# Network throughput
+clanker ask "Show me network traffic for my load balancer"
+clanker ask "Which instances have the highest network egress?"
+
+# Custom metrics
+clanker ask "Show me application error rates from CloudWatch"
+```
+
+### Kubernetes metrics
+
+```bash
+# Node metrics
+clanker k8s stats nodes
+clanker k8s stats nodes --sort-by cpu
+clanker k8s stats nodes --sort-by memory
+
+# Pod metrics (all namespaces)
+clanker k8s stats pods -A
+
+# Namespace-specific
+clanker k8s stats pods -n production --sort-by memory
+
+# Specific pod with container breakdown
+clanker k8s stats pod my-app-789abc --containers
+
+# Cluster aggregates
+clanker k8s stats cluster
+```
+
+**Example output:**
+
+```
+NAME                                  CPU(cores)   CPU%    MEMORY(bytes)   MEMORY%
+my-app-789abc                         245m         24%     1456Mi          45%
+my-app-456def                         189m         18%     1123Mi          35%
+nginx-ingress-controller-xyz          512m         51%     892Mi           28%
+postgres-primary-0                    1200m        120%    3456Mi          54%
+```
+
+<Note>
+The `postgres-primary-0` pod is using 120% CPU, which means it's using more than 1 full core. This indicates it might need more resources or optimization.
+</Note>
+
+## Cost monitoring
+
+Clanker integrates with AWS Cost Explorer to provide real-time cost insights.
+
+### View cost summary
+
+```bash
+# Overall cost summary
+clanker cost
+clanker cost summary
+
+# Specific provider
+clanker cost summary --provider aws
+
+# Date range
+clanker cost summary --start 2026-02-01 --end 2026-02-28
+
+# JSON output
+clanker cost summary --format json
+```
+
+**Example output:**
+
+```
+========================================
+Cloud Cost Summary
+Period: Mar 1, 2026 - Mar 28, 2026
+========================================
+
+Total Cost: $2,847.23
+
+By Provider:
+  AWS:         $2,450.18  (86%)
+  GCP:         $285.50   (10%)
+  Cloudflare:  $111.55   (4%)
+
+Top 5 Services:
+  1. EC2:               $1,234.56  (43%)
+  2. RDS:               $678.90   (24%)
+  3. EKS:               $245.67   (9%)
+  4. Lambda:            $123.45   (4%)
+  5. S3:                $89.12    (3%)
+
+Forecast (End of Month): $3,120.45
+```
+
+### Detailed cost breakdown
+
+```bash
+# Service-level breakdown
+clanker cost detail --provider aws
+
+# Tag-based costs
+clanker cost tags --key Environment
+clanker cost tags --key Team --format json
+
+# Trend analysis
+clanker cost trend --start 2026-01-01 --end 2026-03-01
+```
+
+**Service breakdown:**
+
+```
+========================================
+AWS Cost Breakdown (March 2026)
+========================================
+
+EC2 Instances: $1,234.56
+  - c5.2xlarge (prod-app-1):      $245.60
+  - c5.2xlarge (prod-app-2):      $245.60
+  - m5.large (api-server):        $112.50
+  - t3.medium (dev-instances x5): $156.80
+  - t3.small (bastion):           $15.36
+
+RDS: $678.90
+  - db.r5.xlarge (prod-postgres): $456.00
+  - db.t3.medium (staging-db):    $112.40
+  - Backup storage:               $110.50
+
+EKS: $245.67
+  - Control plane (2 clusters):   $146.00
+  - Worker nodes (m5.large x4):   $99.67
+
+Lambda: $123.45
+  - Invocations:                  $89.20
+  - Duration:                     $34.25
+
+S3: $89.12
+  - Storage:                      $45.60
+  - Requests:                     $23.52
+  - Data transfer:                $20.00
+```
+
+### Cost forecasting
+
+```bash
+# Get forecast for rest of month
+clanker cost forecast
+
+# JSON for automation
+clanker cost forecast --format json
+```
+
+### Detect anomalies
+
+```bash
+# Find cost anomalies and waste
+clanker cost anomalies
+```
+
+**Anomaly detection output:**
+
+```
+========================================
+Cost Anomalies Detected
+========================================
+
+⚠️  High Impact Anomalies (3)
+
+1. EC2 Instance: i-0a1b2c3d4e5f6
+   - Idle for 14 days (0.2% CPU avg)
+   - Monthly waste: ~$125
+   - Recommendation: Stop or terminate
+
+2. RDS Instance: dev-test-db
+   - Running in production region
+   - No connections in 30 days
+   - Monthly waste: ~$178
+   - Recommendation: Take final snapshot and delete
+
+3. EBS Volumes: 8 unattached volumes
+   - Total size: 1.2 TB
+   - Monthly waste: ~$120
+   - Recommendation: Delete or attach to instances
+
+💡 Low Impact Opportunities (5)
+
+4. S3 Bucket: logs-archive-2023
+   - 456 GB in Standard tier
+   - Not accessed in 180 days  
+   - Monthly savings: ~$10
+   - Recommendation: Move to Glacier
+
+[...]
+
+Total Potential Monthly Savings: $523
+```
+
+## Log monitoring
+
+### CloudWatch Logs
+
+```bash
+# Recent errors
+clanker ask "Show me recent errors in CloudWatch Logs"
+
+# Lambda logs
+clanker ask "Show me the last 100 log entries for my-function"
+
+# Search patterns
+clanker ask "Find ERROR in application logs from the last hour"
+
+# Multiple log groups
+clanker ask "Search for 'timeout' across all Lambda log groups"
+```
+
+### Kubernetes logs
+
+```bash
+# Pod logs
+clanker k8s logs my-pod
+
+# Follow logs
+clanker k8s logs my-pod -f
+
+# Specific time range
+clanker k8s logs my-pod --since 1h --tail 200
+
+# All containers
+clanker k8s logs my-pod --all-containers
+
+# Previous container (after crash)
+clanker k8s logs my-pod -p
+```
+
+### Natural language log queries
+
+```bash
+# Kubernetes
+clanker k8s ask "show me error logs from nginx pods"
+clanker k8s ask "show recent logs from pods in production namespace"
+
+# AWS
+clanker ask "show me Lambda errors from the last 24 hours"
+clanker ask "find API Gateway 5xx errors"
+```
+
+## Alerting and dashboards
+
+### CloudWatch Alarms
+
+```bash
+# View alarms
+clanker ask "Show me CloudWatch alarms in ALARM state"
+clanker ask "What alarms triggered in the last 24 hours?"
+
+# Create alarms with maker
+clanker ask --maker "create a CloudWatch alarm for high CPU on my-instance"
+```
+
+### Export metrics for dashboards
+
+```bash
+# Export cost data
+clanker cost export --output costs.csv
+clanker cost export --output costs.json --format json
+
+# Kubernetes metrics
+clanker k8s stats cluster -o json > cluster-metrics.json
+clanker k8s stats pods -A -o yaml > pod-metrics.yaml
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Monitor proactively" icon="bell">
+    Set up regular queries to catch issues before they impact users. Use cron jobs to run Clanker checks hourly.
+  </Card>
+  
+  <Card title="Track cost trends" icon="chart-line">
+    Run `clanker cost trend` weekly to identify spending patterns and unexpected increases.
+  </Card>
+  
+  <Card title="Review anomalies" icon="triangle-exclamation">
+    Check `clanker cost anomalies` monthly to find waste and optimization opportunities.
+  </Card>
+  
+  <Card title="Use JSON output" icon="code">
+    Export metrics as JSON for integration with external monitoring tools and dashboards.
+  </Card>
+</CardGroup>
+
+## Automation examples
+
+### Daily health check
+
+```bash
+#!/bin/bash
+# daily-health-check.sh
+
+echo "=== Daily Infrastructure Health Check ==="
+echo ""
+
+echo "EC2 Health:"
+clanker ask "Show me EC2 instances that are stopped or have issues"
+
+echo ""
+echo "Lambda Health:"
+clanker ask "Show me Lambda functions with errors in the last 24 hours"
+
+echo ""
+echo "RDS Health:"
+clanker ask "Show me RDS instance status and any alerts"
+
+echo ""
+echo "Cost Check:"
+clanker cost summary --format json | jq -r '.totalCost'
+```
+
+### Weekly cost report
+
+```bash
+#!/bin/bash
+# weekly-cost-report.sh
+
+WEEK_START=$(date -d '7 days ago' +%Y-%m-%d)
+WEEK_END=$(date +%Y-%m-%d)
+
+echo "Cost Report: $WEEK_START to $WEEK_END"
+clanker cost summary --start $WEEK_START --end $WEEK_END
+
+echo ""
+echo "Anomalies:"
+clanker cost anomalies
+
+echo ""
+echo "Forecast:"
+clanker cost forecast
+```
+
+### Kubernetes resource alerts
+
+```bash
+#!/bin/bash
+# k8s-resource-alert.sh
+
+# Check for pods using >80% memory
+HIGH_MEM=$(clanker k8s stats pods -A -o json | jq '[.[] | select(.memoryPercent > 80)]')
+
+if [ "$HIGH_MEM" != "[]" ]; then
+  echo "⚠️  High memory pods detected:"
+  echo "$HIGH_MEM" | jq -r '.[] | "\(.name) (\(.namespace)): \(.memoryPercent)%"'
+fi
+
+# Check for not-ready nodes
+NOT_READY=$(clanker k8s ask "show me nodes that are not ready" --format json)
+
+if [ "$NOT_READY" != "[]" ]; then
+  echo "🚨 Not-ready nodes detected:"
+  echo "$NOT_READY"
+fi
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Metrics not showing">
+    If metrics aren't appearing:
+    
+    ```bash
+    # Verify CloudWatch agent is running (EC2)
+    clanker ask "Check if CloudWatch agent is running on my instances"
+    
+    # Check metrics-server (Kubernetes)
+    kubectl get deployment metrics-server -n kube-system
+    
+    # Verify IAM permissions
+    clanker ask "Check CloudWatch permissions for my instances"
+    ```
+  </Accordion>
+  
+  <Accordion title="Cost data missing">
+    Cost Explorer data can take 24 hours to appear:
+    
+    ```bash
+    # Check if Cost Explorer is enabled
+    aws ce get-cost-and-usage --time-period Start=2026-03-01,End=2026-03-02 --granularity DAILY --metrics UnblendedCost
+    
+    # Use a date range at least 2 days old
+    clanker cost summary --start 2026-02-01 --end 2026-02-28
+    ```
+  </Accordion>
+  
+  <Accordion title="High memory in stats output">
+    If you see >100% CPU or memory:
+    
+    - **>100% CPU**: Pod is using multiple cores (e.g., 250% = 2.5 cores)
+    - **>100% memory**: Pod is using more than its requested memory (not limits)
+    
+    Check actual resource requests and limits:
+    ```bash
+    kubectl describe pod <pod-name>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Troubleshooting Lambdas" href="/guides/troubleshooting-lambdas" icon="bolt">
+    Debug Lambda function errors and performance
+  </Card>
+  
+  <Card title="Kubernetes debugging" href="/guides/kubernetes-debugging" icon="bug">
+    Troubleshoot Kubernetes pods and services
+  </Card>
+  
+  <Card title="Cost optimization" href="/guides/cost-optimization" icon="dollar-sign">
+    Act on cost anomalies and reduce waste
+  </Card>
+  
+  <Card title="Security audit" href="/guides/security-audit" icon="shield-check">
+    Use monitoring to detect security issues
+  </Card>
+</CardGroup>

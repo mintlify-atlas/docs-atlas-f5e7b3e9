@@ -1,0 +1,484 @@
+---
+title: "cf ask"
+description: "Ask natural language questions about your Cloudflare account"
+---
+
+The `cf ask` command lets you query your Cloudflare infrastructure using natural language. The AI analyzes your question, executes the necessary Cloudflare API calls, and provides a comprehensive markdown-formatted response.
+
+## Usage
+
+```bash
+clanker cf ask "<your-question>" [flags]
+```
+
+## How it works
+
+When you ask a question:
+
+1. **Question analysis** - The AI determines what Cloudflare operations are needed
+2. **Context gathering** - Relevant account information is collected
+3. **API execution** - Required Cloudflare API calls are made
+4. **Response generation** - Results are formatted into a clear, actionable answer
+5. **Conversation history** - Your question and answer are saved for follow-up questions
+
+## Flags
+
+<ParamField path="--account-id" type="string">
+  Cloudflare account ID. If not provided, uses `CLOUDFLARE_ACCOUNT_ID` environment variable or value from config file.
+</ParamField>
+
+<ParamField path="--api-token" type="string" required>
+  Cloudflare API token. If not provided, uses `CLOUDFLARE_API_TOKEN` environment variable or value from config file.
+</ParamField>
+
+<ParamField path="--zone" type="string">
+  Default zone name for zone-specific queries. Useful when asking questions about a specific domain.
+</ParamField>
+
+<ParamField path="--ai-profile" type="string">
+  AI profile to use for LLM queries. If not specified, uses the default provider from your config file.
+</ParamField>
+
+<ParamField path="--debug" type="boolean" default="false">
+  Enable debug output to see API calls, conversation history, and internal processing.
+</ParamField>
+
+## Query types
+
+The AI automatically routes your questions to specialized handlers:
+
+### DNS queries
+
+Questions about DNS records, zones, and domain configuration.
+
+<CodeGroup>
+
+```bash List DNS records
+clanker cf ask "show dns records for example.com"
+```
+
+```bash Find specific record
+clanker cf ask "what is the A record for www.example.com"
+```
+
+```bash Check nameservers
+clanker cf ask "what are the nameservers for my domain"
+```
+
+</CodeGroup>
+
+**Recognized keywords:** `dns`, `zone`, `record`, `a record`, `aaaa`, `cname`, `mx`, `txt`, `nameserver`, `ns record`, `srv`, `caa`, `domain`
+
+### Worker queries
+
+Questions about deployed Workers and their configuration.
+
+<CodeGroup>
+
+```bash List Workers
+clanker cf ask "what workers do I have deployed"
+```
+
+```bash Worker details
+clanker cf ask "show me details about my-worker"
+```
+
+```bash Worker routes
+clanker cf ask "what routes are configured for my workers"
+```
+
+</CodeGroup>
+
+### Zone queries
+
+Questions about your Cloudflare zones and their settings.
+
+<CodeGroup>
+
+```bash List zones
+clanker cf ask "list all my zones"
+```
+
+```bash Zone status
+clanker cf ask "is example.com active"
+```
+
+```bash Zone settings
+clanker cf ask "show me the settings for example.com"
+```
+
+</CodeGroup>
+
+### Tunnel queries
+
+Questions about Cloudflare Tunnels.
+
+<CodeGroup>
+
+```bash List tunnels
+clanker cf ask "list my tunnels"
+```
+
+```bash Tunnel status
+clanker cf ask "is my-tunnel active"
+```
+
+</CodeGroup>
+
+### Firewall queries
+
+Questions about firewall rules and security settings.
+
+<CodeGroup>
+
+```bash List firewall rules
+clanker cf ask "show firewall rules for example.com"
+```
+
+```bash WAF settings
+clanker cf ask "what WAF rules are enabled"
+```
+
+</CodeGroup>
+
+### General queries
+
+Any other questions about your Cloudflare account are handled by the general AI agent, which can access account status and other context.
+
+```bash
+clanker cf ask "what resources am I using"
+clanker cf ask "show me a summary of my account"
+```
+
+## Examples
+
+### Basic zone information
+
+```bash
+clanker cf ask "list all my zones"
+```
+
+**Example output:**
+
+```markdown
+You have 3 zones configured:
+
+1. **example.com**
+   - Status: Active
+   - ID: zone-abc123
+   - Nameservers: ns1.cloudflare.com, ns2.cloudflare.com
+
+2. **api.example.net**
+   - Status: Active
+   - ID: zone-def456
+   - Nameservers: ns3.cloudflare.com, ns4.cloudflare.com
+
+3. **staging.example.org**
+   - Status: Pending
+   - ID: zone-ghi789
+   - Nameservers: ns5.cloudflare.com, ns6.cloudflare.com
+```
+
+### DNS record lookup
+
+```bash
+clanker cf ask "show dns records for example.com" --zone example.com
+```
+
+**Example output:**
+
+```markdown
+DNS records for example.com:
+
+**A Records:**
+- www.example.com → 192.0.2.1 (Proxied)
+- api.example.com → 192.0.2.2 (DNS only)
+
+**CNAME Records:**
+- blog.example.com → example.ghost.io
+
+**MX Records:**
+- example.com → mail.example.com (Priority: 10)
+
+**TXT Records:**
+- example.com → "v=spf1 include:_spf.example.com ~all"
+```
+
+### Worker information
+
+```bash
+clanker cf ask "what workers do I have deployed"
+```
+
+**Example output:**
+
+```markdown
+You have 4 Workers deployed:
+
+1. **api-gateway**
+   - Routes: api.example.com/*
+   - Bindings: KV (CACHE), R2 (ASSETS)
+   - Last modified: 2026-02-28
+
+2. **redirect-handler**
+   - Routes: example.com/old-path/*
+   - Bindings: None
+   - Last modified: 2026-02-15
+
+3. **auth-middleware**
+   - Routes: *.example.com/admin/*
+   - Bindings: D1 (USERS)
+   - Last modified: 2026-02-20
+
+4. **image-optimizer**
+   - Routes: cdn.example.com/images/*
+   - Bindings: R2 (IMAGES)
+   - Last modified: 2026-02-25
+```
+
+### Tunnel status
+
+```bash
+clanker cf ask "list my tunnels"
+```
+
+**Example output:**
+
+```markdown
+You have 2 Cloudflare Tunnels:
+
+1. **production-tunnel**
+   - ID: tunnel-xyz789
+   - Status: Active
+   - Connections: 2 active
+   - Created: 2026-01-15
+
+2. **staging-tunnel**
+   - ID: tunnel-abc123
+   - Status: Inactive
+   - Connections: 0
+   - Created: 2026-01-20
+```
+
+## Conversation history
+
+Conversation history is automatically maintained per Cloudflare account, allowing you to ask follow-up questions:
+
+```bash
+# First question
+clanker cf ask "show dns records for example.com"
+
+# Follow-up questions use context from previous answers
+clanker cf ask "what about the MX records"
+clanker cf ask "are any of those proxied"
+```
+
+The conversation history includes:
+- Previous questions and answers
+- Account status snapshot
+- Resource context
+
+History is stored locally and persists between CLI sessions.
+
+## DNS modification plans
+
+For DNS modification queries, the AI generates an execution plan instead of making changes directly:
+
+```bash
+clanker cf ask "add an A record for blog.example.com pointing to 192.0.2.10"
+```
+
+**Example output:**
+
+```markdown
+DNS Modification Plan:
+
+Summary: Add A record for blog.example.com
+
+Commands to execute:
+
+1. POST /zones/zone-abc123/dns_records
+   Reason: Create new A record
+   Body: {"type":"A","name":"blog","content":"192.0.2.10","ttl":1,"proxied":false}
+
+To apply this plan, use: clanker cf apply <plan-file>
+```
+
+<Note>
+  DNS modification plans are shown for review but not executed automatically. This prevents accidental changes to your DNS configuration.
+</Note>
+
+## Using different AI profiles
+
+You can specify which AI provider to use for processing your queries:
+
+<CodeGroup>
+
+```bash Anthropic Claude
+clanker cf ask "list my zones" --ai-profile anthropic
+```
+
+```bash OpenAI GPT
+clanker cf ask "list my zones" --ai-profile openai
+```
+
+```bash Google Gemini
+clanker cf ask "list my zones" --ai-profile gemini-api
+```
+
+```bash DeepSeek
+clanker cf ask "list my zones" --ai-profile deepseek
+```
+
+</CodeGroup>
+
+Each provider requires appropriate API credentials configured in your `~/.clanker.yaml` file.
+
+## Debugging queries
+
+Use the `--debug` flag to see detailed information about how your query is processed:
+
+```bash
+clanker cf ask "list my zones" --debug
+```
+
+**Debug output includes:**
+- Conversation history loading status
+- Account status gathering
+- Query type determination (DNS, Worker, general, etc.)
+- API calls being made
+- AI prompt construction
+- Response generation
+
+## Authentication
+
+The `cf ask` command requires authentication. Provide credentials using:
+
+<Tabs>
+  <Tab title="Command flags">
+    ```bash
+    clanker cf ask "list my zones" \
+      --account-id your-account-id \
+      --api-token your-api-token
+    ```
+  </Tab>
+  
+  <Tab title="Environment variables">
+    ```bash
+    export CLOUDFLARE_ACCOUNT_ID=your-account-id
+    export CLOUDFLARE_API_TOKEN=your-api-token
+    
+    clanker cf ask "list my zones"
+    ```
+  </Tab>
+  
+  <Tab title="Config file">
+    Add to `~/.clanker.yaml`:
+    
+    ```yaml
+    cloudflare:
+      account_id: your-account-id
+      api_token: your-api-token
+    ```
+    
+    Then run:
+    ```bash
+    clanker cf ask "list my zones"
+    ```
+  </Tab>
+</Tabs>
+
+## Best practices
+
+<AccordionGroup>
+
+<Accordion title="Be specific with zone names">
+  When asking about DNS or zone-specific resources, include the zone name or use the `--zone` flag:
+  
+  ```bash
+  clanker cf ask "show dns records for example.com"
+  # or
+  clanker cf ask "show dns records" --zone example.com
+  ```
+</Accordion>
+
+<Accordion title="Use follow-up questions">
+  Leverage conversation history for more efficient queries:
+  
+  ```bash
+  clanker cf ask "list all my zones"
+  clanker cf ask "tell me more about the first one"
+  clanker cf ask "what dns records does it have"
+  ```
+</Accordion>
+
+<Accordion title="Review DNS plans before applying">
+  Always review DNS modification plans carefully before executing them to prevent accidental changes.
+</Accordion>
+
+<Accordion title="Use debug mode for troubleshooting">
+  If you're not getting the expected results, enable `--debug` to understand how your query is being processed.
+</Accordion>
+
+</AccordionGroup>
+
+## Error handling
+
+<AccordionGroup>
+
+<Accordion title="Empty question">
+  **Error:** `question cannot be empty`
+  
+  **Solution:** Provide a non-empty question string:
+  ```bash
+  clanker cf ask "list my zones"
+  ```
+</Accordion>
+
+<Accordion title="API token required">
+  **Error:** `cloudflare API token is required`
+  
+  **Solution:** Provide your API token via flag, environment variable, or config file.
+</Accordion>
+
+<Accordion title="DNS query failed">
+  **Error:** `DNS query failed: <details>`
+  
+  **Solutions:**
+  - Verify the zone name is correct
+  - Check your API token has DNS read permissions
+  - Use `--debug` to see detailed error information
+</Accordion>
+
+<Accordion title="AI query failed">
+  **Error:** `AI query failed: <details>`
+  
+  **Solutions:**
+  - Verify your AI provider credentials are correct
+  - Check your API quota hasn't been exceeded
+  - Try a different AI profile with `--ai-profile`
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Deploy resources" icon="rocket" href="/commands/cloudflare/deploy">
+  Learn how to deploy Workers, Pages, and other resources
+</Card>
+
+<Card title="Cloudflare overview" icon="cloud" href="/commands/cloudflare/overview">
+  Explore all Cloudflare commands
+</Card>
+
+<Card title="Natural language concepts" icon="brain" href="/concepts/natural-language">
+  Understand how natural language processing works in Clanker
+</Card>
+
+<Card title="AI configuration" icon="robot" href="/advanced/custom-profiles">
+  Configure AI providers and profiles
+</Card>
+
+</CardGroup>

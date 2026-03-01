@@ -1,0 +1,100 @@
+---
+title: Command reference
+description: Complete reference for all Clanker CLI commands
+---
+
+Clanker provides a comprehensive set of commands for querying and managing your cloud infrastructure using natural language and traditional CLI patterns.
+
+## Command structure
+
+All Clanker commands follow this structure:
+
+```bash
+clanker [command] [subcommand] [flags]
+```
+
+## Core commands
+
+<CardGroup cols={2}>
+  <Card title="ask" icon="message-question" href="/commands/ask">
+    Ask natural language questions about your cloud infrastructure
+  </Card>
+  
+  <Card title="k8s" icon="dharmachakra" href="/commands/k8s">
+    Manage Kubernetes clusters and query workloads
+  </Card>
+  
+  <Card title="config" icon="gear" href="/commands/config">
+    Manage Clanker configuration and credentials
+  </Card>
+  
+  <Card title="credentials" icon="key" href="/commands/credentials">
+    Store and manage cloud credentials in the backend
+  </Card>
+</CardGroup>
+
+## AWS commands
+
+<CardGroup cols={2}>
+  <Card title="aws maker" icon="aws" href="/commands/aws/maker">
+    Generate infrastructure change plans for AWS
+  </Card>
+  
+  <Card title="aws apply" icon="play" href="/commands/aws/apply">
+    Execute approved infrastructure plans on AWS
+  </Card>
+</CardGroup>
+
+## Global flags
+
+These flags are available for all commands:
+
+<ParamField path="--config" type="string">
+  Path to config file (default: `$HOME/.clanker.yaml`)
+</ParamField>
+
+<ParamField path="--debug" type="boolean" default="false">
+  Enable debug output with progress and internal diagnostics
+</ParamField>
+
+<ParamField path="--local-mode" type="boolean" default="true">
+  Enable local mode with rate limiting to prevent system overload
+</ParamField>
+
+<ParamField path="--local-delay" type="integer" default="100">
+  Delay in milliseconds between calls in local mode
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  Backend API key (or set `CLANKER_BACKEND_API_KEY`)
+</ParamField>
+
+<ParamField path="--backend-env" type="string">
+  Backend environment: `testing`, `staging`, or `production`
+</ParamField>
+
+<ParamField path="--backend-url" type="string">
+  Backend API URL (overrides `--backend-env`)
+</ParamField>
+
+## Getting help
+
+Get help for any command:
+
+```bash
+clanker --help
+clanker ask --help
+clanker k8s create eks --help
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Ask command" icon="message-question" href="/commands/ask">
+    Learn how to query infrastructure with natural language
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/commands/config">
+    Set up your AI providers and cloud credentials
+  </Card>
+</CardGroup>

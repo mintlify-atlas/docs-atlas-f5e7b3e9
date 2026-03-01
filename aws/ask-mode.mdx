@@ -1,0 +1,379 @@
+---
+title: Ask mode
+description: Query AWS infrastructure with natural language using AI-powered context gathering and tool calling
+---
+
+Ask mode enables you to query your AWS infrastructure using natural language. Clanker analyzes your question, gathers relevant AWS context, and provides intelligent answers.
+
+## How it works
+
+Ask mode operates in three phases:
+
+<Steps>
+  <Step title="Routing">
+    Clanker determines which cloud provider (AWS/GCP/Azure) the question targets
+  </Step>
+  <Step title="Context gathering">
+    Relevant AWS service data is collected based on keywords in your question
+  </Step>
+  <Step title="AI analysis">
+    The AI processes the context and provides an answer with tool calling support
+  </Step>
+</Steps>
+
+## Basic usage
+
+### Implicit AWS detection
+
+```bash
+clanker ask "What EC2 instances are running?"
+clanker ask "Show me lambda functions with high error rates"
+clanker ask "What's the current RDS instance status?"
+```
+
+Clanker automatically detects AWS-related queries through keyword inference.
+
+### Explicit AWS flag
+
+```bash
+clanker ask "List all resources" --aws
+clanker ask "Show infrastructure overview" --aws --discovery
+```
+
+Use `--aws` to explicitly enable AWS context gathering.
+
+## Context gathering
+
+Clanker intelligently determines which AWS services to query based on your question:
+
+### Service detection
+
+From `~/workspace/source/internal/aws/client.go:198-262`:
+
+```go
+func (c *Client) GetRelevantContext(ctx context.Context, question string) (string, error) {
+    var context strings.Builder
+    questionLower := strings.ToLower(question)
+
+    if strings.Contains(questionLower, "ec2") || strings.Contains(questionLower, "instance") {
+        ec2Info, err := c.getEC2Info(ctx)
+        context.WriteString("EC2 Instances:\n")
+        context.WriteString(ec2Info)
+    }
+
+    if strings.Contains(questionLower, "lambda") || strings.Contains(questionLower, "function") {
+        lambdaInfo, err := c.getLambdaInfo(ctx)
+        context.WriteString("Lambda Functions:\n")
+        context.WriteString(lambdaInfo)
+    }
+
+    if strings.Contains(questionLower, "rds") || strings.Contains(questionLower, "database") {
+        rdsInfo, err := c.getRDSInfo(ctx)
+        context.WriteString("RDS Instances:\n")
+        context.WriteString(rdsInfo)
+    }
+}
+```
+
+### Supported service keywords
+
+| Keyword | Service | Data Retrieved |
+|---------|---------|----------------|
+| `ec2`, `instance` | EC2 | Instance state, type, IPs |
+| `lambda`, `function` | Lambda | Functions, runtime, last modified |
+| `rds`, `database` | RDS | DB instances, status, config |
+| `s3`, `bucket` | S3 | Buckets, creation dates |
+| `ecs`, `container` | ECS | Clusters, services, tasks |
+| `iam`, `role` | IAM | Roles (names only) |
+| `log`, `cloudwatch`, `error` | CloudWatch Logs | Log groups, recent errors |
+
+### Error log analysis
+
+When asking about errors, Clanker fetches recent error logs:
+
+```bash
+clanker ask "Show me the last error from my Lambda function"
+```
+
+From `~/workspace/source/internal/aws/client.go:273-284`:
+
+```go
+if strings.Contains(questionLower, "error") || strings.Contains(questionLower, "last error") {
+    errorLogs, err := c.getRecentErrorLogs(ctx, questionLower)
+    if err != nil {
+        context.WriteString(fmt.Sprintf("Note: Could not fetch recent error logs: %v\n\n", err))
+    } else if errorLogs != "" {
+        context.WriteString("Recent Error Logs:\n")
+        context.WriteString(errorLogs)
+    }
+}
+```
+
+## AI tool calling
+
+When AWS or GitHub context is enabled, Clanker uses AI tool calling for dynamic operations:
+
+### Tool-based execution
+
+From `~/workspace/source/cmd/ask.go:1050-1061`:
+
+```go
+awsProfileForTools := profile
+if awsProfileForTools == "" {
+    awsProfileForTools = ai.FindInfraAnalysisProfile()
+}
+
+response, err := aiClient.AskWithTools(
+    ctx, 
+    question, 
+    awsContext, 
+    combinedCodeContext, 
+    awsProfileForTools, 
+    githubContext
+)
+```
+
+### Available tools
+
+Tools enable the AI to:
+- Execute AWS CLI commands dynamically
+- Query specific resources by ID/ARN
+- Analyze CloudWatch metrics
+- Inspect security group rules
+- Check IAM permissions
+
+## Advanced queries
+
+### Multi-service questions
+
+```bash
+clanker ask "Which Lambda functions connect to which RDS databases?"
+```
+
+Clanker gathers context from multiple services and correlates the data.
+
+### Time-based queries
+
+```bash
+clanker ask "Show me Lambda errors from the last hour"
+```
+
+CloudWatch logs are filtered by time range automatically.
+
+### Cost analysis
+
+```bash
+clanker ask "What's my estimated monthly cost for EC2?"
+```
+
+Uses AWS Cost Explorer data when available.
+
+## Profile and region selection
+
+### Specify AWS profile
+
+```bash
+clanker ask "List S3 buckets" --profile prod-account
+```
+
+### Use environment-based profiles
+
+Configure environments in `~/.clanker/config.yaml`:
+
+```yaml
+infra:
+  default_environment: dev
+  aws:
+    environments:
+      dev:
+        profile: dev-profile
+        region: us-east-1
+      prod:
+        profile: prod-profile
+        region: us-west-2
+```
+
+Then query:
+
+```bash
+# Uses dev environment (default)
+clanker ask "Show EC2 instances"
+
+# Override environment
+clanker ask "Show EC2 instances" --profile prod-profile
+```
+
+From `~/workspace/source/cmd/ask.go:664-678`:
+
+```go
+targetProfile := profile
+if targetProfile == "" {
+    defaultEnv := viper.GetString("infra.default_environment")
+    if defaultEnv == "" {
+        defaultEnv = "dev"
+    }
+    targetProfile = viper.GetString(fmt.Sprintf("infra.aws.environments.%s.profile", defaultEnv))
+    if targetProfile == "" {
+        targetProfile = viper.GetString("aws.default_profile")
+    }
+    if targetProfile == "" {
+        targetProfile = "default"
+    }
+}
+```
+
+## Discovery mode
+
+Enable comprehensive infrastructure scanning:
+
+```bash
+clanker ask "What AWS services am I using?" --discovery
+```
+
+Discovery mode:
+- Activates AWS and Terraform contexts
+- Checks all services in parallel
+- Returns resource counts and availability
+
+From `~/workspace/source/cmd/ask.go:528-535`:
+
+```go
+if discovery {
+    includeAWS = true
+    includeTerraform = true
+    if debug {
+        fmt.Println("Discovery mode enabled: AWS and Terraform contexts activated")
+    }
+}
+```
+
+## Routing logic
+
+Clanker uses intelligent routing to determine the target service:
+
+### Keyword-based inference
+
+```bash
+# Routes to AWS
+clanker ask "Show EC2 instances"
+
+# Routes to GCP
+clanker ask "List Cloud Run services"
+
+# Routes to Cloudflare
+clanker ask "Show DNS records"
+```
+
+### LLM classification for ambiguous queries
+
+When multiple services are detected, Clanker uses LLM-based routing:
+
+From `~/workspace/source/cmd/ask.go:562-583`:
+
+```go
+if routing.NeedsLLMClassification(svcCtx) {
+    if debug {
+        fmt.Println("[routing] Ambiguous query detected, using LLM for classification...")
+    }
+    
+    llmService, err := routing.ClassifyWithLLM(context.Background(), routingQuestion, debug)
+    if err != nil {
+        // Fallback to keyword inference
+        if debug {
+            fmt.Printf("[routing] LLM classification failed (%v), falling back to keyword inference\n", err)
+        }
+    } else {
+        routing.ApplyLLMClassification(&svcCtx, llmService)
+    }
+}
+```
+
+### Route-only mode (for integrations)
+
+```bash
+clanker ask "Show S3 buckets" --route-only
+```
+
+Returns JSON routing decision:
+
+```json
+{
+  "agent": "aws",
+  "reason": "Question contains AWS service keyword: s3"
+}
+```
+
+## AI provider configuration
+
+### Configure AI provider
+
+Set your preferred AI provider in `~/.clanker/config.yaml`:
+
+```yaml
+ai:
+  default_provider: openai
+  providers:
+    openai:
+      api_key: sk-...
+      model: gpt-4
+    anthropic:
+      api_key: sk-ant-...
+      model: claude-3-5-sonnet-20241022
+```
+
+### Override via flags
+
+```bash
+# Use specific provider
+clanker ask "List EC2 instances" --ai-profile anthropic
+
+# Use specific model
+clanker ask "List EC2 instances" --openai-model gpt-4-turbo
+```
+
+## Examples
+
+<AccordionGroup>
+  <Accordion title="Find stopped EC2 instances">
+    ```bash
+    clanker ask "Which EC2 instances are stopped?"
+    ```
+    
+    Clanker gathers EC2 context and filters by state.
+  </Accordion>
+  
+  <Accordion title="Analyze Lambda cold starts">
+    ```bash
+    clanker ask "Show Lambda functions with cold start issues"
+    ```
+    
+    Analyzes CloudWatch metrics for initialization duration.
+  </Accordion>
+  
+  <Accordion title="Security group audit">
+    ```bash
+    clanker ask "Which security groups allow 0.0.0.0/0 access?"
+    ```
+    
+    Scans all security groups and identifies overly permissive rules.
+  </Accordion>
+  
+  <Accordion title="Cost optimization">
+    ```bash
+    clanker ask "Which resources are using the most expensive instance types?"
+    ```
+    
+    Correlates EC2 instance types with pricing data.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Maker/apply workflow" icon="wand-magic-sparkles" href="/aws/maker-apply">
+    Generate and execute infrastructure plans
+  </Card>
+  <Card title="Service support" icon="aws" href="/aws/services">
+    See all supported AWS services
+  </Card>
+</CardGroup>

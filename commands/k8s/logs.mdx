@@ -1,0 +1,130 @@
+---
+title: clanker k8s logs
+description: Get logs from a Kubernetes pod
+---
+
+Retrieve logs from a pod or container in your Kubernetes cluster.
+
+## Usage
+
+```bash
+clanker k8s logs [pod-name] [flags]
+```
+
+## Arguments
+
+<ParamField path="pod-name" type="string" required>
+  Name of the pod to get logs from
+</ParamField>
+
+## Flags
+
+<ParamField path="-c, --container" type="string">
+  Container name (required for multi-container pods)
+</ParamField>
+
+<ParamField path="-f, --follow" type="boolean">
+  Follow log output (stream logs in real-time)
+</ParamField>
+
+<ParamField path="-p, --previous" type="boolean">
+  Get logs from the previous terminated container
+</ParamField>
+
+<ParamField path="--tail" type="integer" default="100">
+  Number of lines from the end of logs to show
+</ParamField>
+
+<ParamField path="--since" type="string">
+  Show logs since a duration (e.g., 1h, 30m, 10s)
+</ParamField>
+
+<ParamField path="--timestamps" type="boolean">
+  Include timestamps on each line
+</ParamField>
+
+<ParamField path="--all-containers" type="boolean">
+  Get logs from all containers in the pod
+</ParamField>
+
+<ParamField path="-n, --namespace" type="string" default="default">
+  Kubernetes namespace
+</ParamField>
+
+## Examples
+
+### Get recent logs from a pod
+
+```bash
+clanker k8s logs my-pod
+```
+
+<CodeGroup>
+```bash Output
+2024-03-01 10:15:23 Starting application...
+2024-03-01 10:15:24 Server listening on port 8080
+2024-03-01 10:15:25 Connected to database
+2024-03-01 10:15:30 Received request: GET /api/health
+2024-03-01 10:15:31 Response sent: 200 OK
+```
+</CodeGroup>
+
+### Follow logs in real-time
+
+```bash
+clanker k8s logs my-pod -f
+```
+
+### Get logs from a specific container
+
+```bash
+clanker k8s logs my-pod -c my-container
+```
+
+### Get last 50 lines with timestamps
+
+```bash
+clanker k8s logs my-pod --tail 50 --timestamps
+```
+
+<CodeGroup>
+```bash Output
+2024-03-01T10:15:23.123Z Starting application...
+2024-03-01T10:15:24.456Z Server listening on port 8080
+2024-03-01T10:15:25.789Z Connected to database
+```
+</CodeGroup>
+
+### Get logs from the last hour
+
+```bash
+clanker k8s logs my-pod --since 1h
+```
+
+### Get logs from all containers
+
+```bash
+clanker k8s logs my-pod --all-containers
+```
+
+### Get logs from previous container instance
+
+Useful when a container has crashed and restarted:
+
+```bash
+clanker k8s logs my-pod -p
+```
+
+### Get logs from a pod in a different namespace
+
+```bash
+clanker k8s logs nginx -n kube-system
+```
+
+<Tip>
+Use the `-f` flag to tail logs in real-time, similar to `tail -f`. Press Ctrl+C to stop following.
+</Tip>
+
+<Note>
+If a pod has multiple containers, you must specify the container name using `-c` or use `--all-containers` to see logs from all containers.
+</Note>

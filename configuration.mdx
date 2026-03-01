@@ -1,0 +1,551 @@
+---
+title: Configuration
+description: Configure AI providers, cloud credentials, and customize Clanker for your environments
+---
+
+Clanker uses a YAML configuration file located at `~/.clanker.yaml`. This guide covers all configuration options and best practices.
+
+## Configuration file location
+
+By default, Clanker looks for `~/.clanker.yaml`. You can override this:
+
+```bash
+clanker ask "your question" --config /path/to/config.yaml
+```
+
+## Initialize configuration
+
+The easiest way to get started is to initialize a config file:
+
+```bash
+clanker config init
+```
+
+Or copy the example configuration:
+
+```bash
+cp .clanker.example.yaml ~/.clanker.yaml
+```
+
+## Minimal configuration
+
+Here's a minimal working configuration:
+
+```yaml
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+
+infra:
+  default_provider: aws
+  default_environment: dev
+  
+  aws:
+    environments:
+      dev:
+        profile: your-aws-profile
+        region: us-east-1
+```
+
+## AI providers
+
+Clanker supports multiple AI providers. Configure one or more providers and set a default.
+
+### Gemini API (recommended)
+
+```yaml
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+```
+
+Set the environment variable:
+
+```bash
+export GEMINI_API_KEY="your-key-here"
+```
+
+### OpenAI
+
+```yaml
+ai:
+  default_provider: openai
+  providers:
+    openai:
+      model: gpt-5
+      api_key: ""  # Leave empty to use OPENAI_API_KEY env var
+```
+
+<Note>
+The OpenAI provider currently reads `ai.providers.openai.api_key` directly (not `api_key_env`). You can either paste your key in the config or pass it at runtime with `--openai-key`.
+</Note>
+
+Set the environment variable:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Or pass it at runtime:
+
+```bash
+clanker ask --ai-profile openai --openai-key "$OPENAI_API_KEY" "your question"
+```
+
+### AWS Bedrock (Claude)
+
+```yaml
+ai:
+  default_provider: bedrock
+  providers:
+    bedrock:
+      aws_profile: your-bedrock-aws-profile
+      region: us-east-1
+      model: us.anthropic.claude-sonnet-4-20250514-v1:0
+```
+
+### DeepSeek
+
+```yaml
+ai:
+  default_provider: deepseek
+  providers:
+    deepseek:
+      model: deepseek-chat  # or deepseek-reasoner
+      api_key_env: DEEPSEEK_API_KEY
+```
+
+Set the environment variable:
+
+```bash
+export DEEPSEEK_API_KEY="your-key-here"
+```
+
+Or pass at runtime:
+
+```bash
+clanker ask --ai-profile deepseek --deepseek-key "$DEEPSEEK_API_KEY" "your question"
+```
+
+### MiniMax
+
+```yaml
+ai:
+  default_provider: minimax
+  providers:
+    minimax:
+      model: MiniMax-M2.5  # or MiniMax-M2.5-highspeed, MiniMax-M2.1, etc.
+      api_key_env: MINIMAX_API_KEY
+```
+
+Set the environment variable:
+
+```bash
+export MINIMAX_API_KEY="your-key-here"
+```
+
+Or pass at runtime:
+
+```bash
+clanker ask --ai-profile minimax --minimax-key "$MINIMAX_API_KEY" "your question"
+```
+
+### Multiple AI providers
+
+You can configure multiple providers and switch between them:
+
+```yaml
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+    
+    openai:
+      model: gpt-5
+      api_key_env: OPENAI_API_KEY
+    
+    bedrock:
+      aws_profile: bedrock-profile
+      region: us-east-1
+      model: us.anthropic.claude-sonnet-4-20250514-v1:0
+```
+
+Switch providers at runtime:
+
+```bash
+clanker ask --ai-profile openai "your question"
+clanker ask --ai-profile bedrock "your question"
+```
+
+## Infrastructure providers
+
+### AWS
+
+Configure AWS environments with their respective profiles and regions:
+
+```yaml
+infra:
+  default_provider: aws
+  default_environment: dev
+  
+  aws:
+    environments:
+      dev:
+        profile: your-dev-profile
+        region: us-east-1
+      
+      stage:
+        profile: your-stage-profile
+        region: us-east-1
+      
+      prod:
+        profile: your-prod-profile
+        region: us-east-1
+```
+
+<Warning>
+Clanker uses your local AWS CLI profiles, not raw access keys. Never put AWS access keys directly in the config file.
+</Warning>
+
+Create AWS CLI profiles:
+
+```bash
+aws configure --profile your-dev-profile
+aws sts get-caller-identity --profile your-dev-profile
+```
+
+For SSO profiles:
+
+```bash
+aws sso login --profile your-profile
+```
+
+### GCP
+
+```yaml
+infra:
+  gcp:
+    project_id: your-gcp-project-id
+```
+
+### AWS service keywords (advanced)
+
+Customize internal routing for AWS services:
+
+```yaml
+aws:
+  service_keywords:
+    api: [api, gateway]
+    serverless: [lambda, step-functions]
+```
+
+## Additional integrations
+
+### GitHub
+
+For GitHub queries and automation:
+
+```yaml
+github:
+  token: "ghp_..."  # Optional for public repos
+  owner: your-org
+  repo: your-repo
+```
+
+### Kubernetes
+
+Configure Kubernetes clusters and contexts:
+
+```yaml
+kubernetes:
+  kubeconfig: ""  # Path to kubeconfig (default: ~/.kube/config)
+  default_context: ""
+  default_namespace: ""
+  
+  clusters:
+    production:
+      type: eks  # eks or existing
+      name: prod-cluster
+      profile: prod-aws
+      region: us-east-1
+    
+    staging:
+      type: eks
+      name: staging-cluster
+      profile: dev-aws
+      region: us-west-2
+    
+    local:
+      type: existing  # Use existing kubectl context
+      context: minikube
+```
+
+### Terraform
+
+```yaml
+terraform:
+  default_workspace: dev
+  workspaces:
+    dev:
+      path: /path/to/infra
+```
+
+### Postgres
+
+```yaml
+postgres:
+  default_connection: dev
+  connections:
+    dev:
+      host: localhost
+      port: 5432
+      database: your_db
+      username: postgres
+```
+
+### Cloudflare
+
+```yaml
+cloudflare:
+  api_token: ""  # Or set CLOUDFLARE_API_TOKEN / CF_API_TOKEN
+  account_id: ""  # Or set CLOUDFLARE_ACCOUNT_ID / CF_ACCOUNT_ID
+  default_zone: ""  # Default zone name for DNS operations
+```
+
+### Backend integration
+
+For storing and retrieving credentials across machines:
+
+```yaml
+backend:
+  api_key: ""  # Or set CLANKER_BACKEND_API_KEY
+  env: "testing"  # testing, staging, or production (or set CLANKER_BACKEND_ENV)
+  # url: "https://custom-url.example.com"  # Optional custom backend URL
+```
+
+Store AWS credentials:
+
+```bash
+clanker credentials store aws --profile <profile>
+```
+
+Query using backend credentials:
+
+```bash
+clanker ask "your question" --api-key <key>
+```
+
+## General settings
+
+Additional configuration options:
+
+```yaml
+timeout: 30  # Query timeout in seconds
+```
+
+## No config file defaults
+
+If you run Clanker without `~/.clanker.yaml`, these defaults apply:
+
+- **Default provider**: `openai` (unless you pass `--ai-profile`)
+- **OpenAI key order**: `--openai-key` → `OPENAI_API_KEY` env var
+- **Gemini key order**: `--gemini-key` → `GEMINI_API_KEY` env var
+- **Default model**: `gpt-5` for OpenAI, `gemini-3-pro-preview` for Gemini
+
+## View current configuration
+
+Verify your configuration at any time:
+
+```bash
+clanker config show
+```
+
+## Environment variables
+
+Many config values can be overridden with environment variables:
+
+<CodeGroup>
+```bash AI Providers
+export OPENAI_API_KEY="sk-..."
+export GEMINI_API_KEY="your-key"
+export DEEPSEEK_API_KEY="your-key"
+export MINIMAX_API_KEY="your-key"
+```
+
+```bash Cloudflare
+export CLOUDFLARE_API_TOKEN="your-token"
+export CF_API_TOKEN="your-token"
+export CLOUDFLARE_ACCOUNT_ID="your-account-id"
+export CF_ACCOUNT_ID="your-account-id"
+```
+
+```bash Backend
+export CLANKER_BACKEND_API_KEY="your-key"
+export CLANKER_BACKEND_ENV="testing"
+export CLANKER_BACKEND_URL="https://custom-url.example.com"
+```
+</CodeGroup>
+
+## Configuration best practices
+
+<AccordionGroup>
+  <Accordion title="Use environment variables for secrets">
+    Never hardcode API keys in your config file. Use `api_key_env` to reference environment variables:
+    
+    ```yaml
+    providers:
+      gemini-api:
+        api_key_env: GEMINI_API_KEY  # Good
+        # api_key: "your-key-here"  # Bad - don't do this
+    ```
+  </Accordion>
+  
+  <Accordion title="Use AWS CLI profiles, not access keys">
+    Clanker reads AWS credentials from your AWS CLI profiles (`~/.aws/credentials` and `~/.aws/config`). Never put AWS access keys in the Clanker config:
+    
+    ```yaml
+    aws:
+      environments:
+        dev:
+          profile: your-aws-profile  # Good - uses AWS CLI profile
+          # access_key: "..."  # Bad - don't do this
+    ```
+  </Accordion>
+  
+  <Accordion title="Separate environments">
+    Use different AWS profiles and environments for dev, staging, and production:
+    
+    ```yaml
+    aws:
+      environments:
+        dev: { profile: dev-profile, region: us-east-1 }
+        stage: { profile: stage-profile, region: us-east-1 }
+        prod: { profile: prod-profile, region: us-east-1 }
+    ```
+  </Accordion>
+  
+  <Accordion title="Keep sensitive configs secure">
+    Your `~/.clanker.yaml` may contain references to sensitive resources. Ensure it has appropriate file permissions:
+    
+    ```bash
+    chmod 600 ~/.clanker.yaml
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Config file not found
+
+If Clanker can't find your config file:
+
+```bash
+# Check if it exists
+ls -la ~/.clanker.yaml
+
+# Specify config explicitly
+clanker ask "your question" --config ~/.clanker.yaml
+```
+
+### AWS authentication issues
+
+Verify your AWS profile:
+
+```bash
+aws sts get-caller-identity --profile your-profile
+aws sso login --profile your-profile  # For SSO profiles
+```
+
+### View loaded configuration
+
+See what configuration Clanker is using:
+
+```bash
+clanker config show
+clanker ask "test" --debug  # Shows config file path
+```
+
+## Complete example
+
+Here's a comprehensive example configuration:
+
+```yaml
+# AI configuration
+ai:
+  default_provider: gemini-api
+  providers:
+    gemini-api:
+      model: gemini-2.5-flash
+      api_key_env: GEMINI_API_KEY
+    
+    openai:
+      model: gpt-5
+      api_key_env: OPENAI_API_KEY
+
+# Infrastructure configuration
+infra:
+  default_provider: aws
+  default_environment: dev
+  
+  aws:
+    environments:
+      dev:
+        profile: dev-aws-profile
+        region: us-east-1
+      
+      prod:
+        profile: prod-aws-profile
+        region: us-east-1
+  
+  gcp:
+    project_id: my-gcp-project
+
+# GitHub configuration
+github:
+  token: "ghp_..."
+  owner: myorg
+  repo: myrepo
+
+# Kubernetes configuration
+kubernetes:
+  default_context: "minikube"
+  default_namespace: "default"
+  
+  clusters:
+    production:
+      type: eks
+      name: prod-cluster
+      profile: prod-aws-profile
+      region: us-east-1
+
+# General settings
+timeout: 30
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Start running queries with your new configuration
+  </Card>
+  
+  <Card title="AWS commands" icon="aws" href="/aws/overview">
+    Learn about AWS-specific features and maker mode
+  </Card>
+  
+  <Card title="Kubernetes" icon="ship" href="/kubernetes/overview">
+    Explore Kubernetes cluster management
+  </Card>
+  
+  <Card title="Debugging" icon="wrench" href="/advanced/debugging">
+    Debug mode and troubleshooting
+  </Card>
+</CardGroup>

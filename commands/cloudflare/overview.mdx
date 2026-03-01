@@ -1,0 +1,186 @@
+---
+title: "Cloudflare commands"
+description: "Deploy and manage Cloudflare resources with Clanker"
+---
+
+The `cf` command provides a comprehensive toolkit for deploying, managing, and querying your Cloudflare infrastructure using natural language and direct commands.
+
+## Overview
+
+Clanker's Cloudflare integration allows you to:
+
+- Deploy Workers, Pages, and other Cloudflare resources
+- Create and manage KV namespaces, D1 databases, and R2 buckets
+- Configure DNS records and Cloudflare Tunnels
+- Ask natural language questions about your Cloudflare account
+- List and delete existing resources
+
+## Available commands
+
+<CardGroup cols={2}>
+
+<Card title="cf ask" icon="message-question" href="/commands/cloudflare/ask">
+  Ask natural language questions about your Cloudflare account
+</Card>
+
+<Card title="cf deploy" icon="rocket" href="/commands/cloudflare/deploy">
+  Deploy Workers, Pages, and other resources to Cloudflare
+</Card>
+
+<Card title="cf create" icon="plus">
+  Create new Cloudflare resources like KV, D1, R2, and DNS records
+</Card>
+
+<Card title="cf delete" icon="trash">
+  Delete Cloudflare resources
+</Card>
+
+<Card title="cf list" icon="list">
+  List zones, workers, and other Cloudflare resources
+</Card>
+
+</CardGroup>
+
+## Authentication
+
+All Cloudflare commands require authentication. You can provide credentials in three ways:
+
+<AccordionGroup>
+
+<Accordion title="Command-line flags">
+  Pass credentials directly to each command:
+  
+  ```bash
+  clanker cf ask "list my zones" --account-id your-account-id --api-token your-api-token
+  ```
+</Accordion>
+
+<Accordion title="Environment variables">
+  Set environment variables for automatic authentication:
+  
+  ```bash
+  export CLOUDFLARE_ACCOUNT_ID=your-account-id
+  export CLOUDFLARE_API_TOKEN=your-api-token
+  ```
+</Accordion>
+
+<Accordion title="Configuration file">
+  Add credentials to your `~/.clanker.yaml` config file:
+  
+  ```yaml
+  cloudflare:
+    account_id: your-account-id
+    api_token: your-api-token
+  ```
+</Accordion>
+
+</AccordionGroup>
+
+## Common flags
+
+These flags are available across all Cloudflare commands:
+
+<ParamField path="--account-id" type="string">
+  Your Cloudflare account ID. Can also be set via `CLOUDFLARE_ACCOUNT_ID` environment variable or in config file.
+</ParamField>
+
+<ParamField path="--api-token" type="string" required>
+  Your Cloudflare API token. Can also be set via `CLOUDFLARE_API_TOKEN` environment variable or in config file.
+</ParamField>
+
+<ParamField path="--debug" type="boolean" default="false">
+  Enable debug output to see detailed API interactions and troubleshooting information.
+</ParamField>
+
+## Getting started
+
+<Steps>
+
+<Step title="Create a Cloudflare API token">
+  Generate an API token from your [Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens) with the necessary permissions for your use case.
+</Step>
+
+<Step title="Configure authentication">
+  Set your credentials using one of the authentication methods above.
+</Step>
+
+<Step title="Try a simple query">
+  Test your setup with a natural language question:
+  
+  ```bash
+  clanker cf ask "list all my zones"
+  ```
+</Step>
+
+<Step title="Deploy your first resource">
+  Create a simple Worker or DNS record:
+  
+  ```bash
+  clanker cf create dns --zone example.com --type A --name www --content 1.2.3.4
+  ```
+</Step>
+
+</Steps>
+
+## Example workflows
+
+<CodeGroup>
+
+```bash Worker deployment
+# Deploy a Worker with KV and R2 bindings
+clanker cf deploy worker \
+  --name my-api \
+  --script ./api.js \
+  --route "api.example.com/*" \
+  --kv CACHE=namespace-id \
+  --r2 ASSETS=bucket-name
+```
+
+```bash Pages deployment
+# Deploy a static site to Pages
+clanker cf deploy pages \
+  --project my-site \
+  --directory ./dist \
+  --branch main
+```
+
+```bash DNS management
+# Create a DNS record
+clanker cf create dns \
+  --zone example.com \
+  --type A \
+  --name api \
+  --content 192.0.2.1 \
+  --proxied
+```
+
+```bash Natural language queries
+# Ask about your infrastructure
+clanker cf ask "show dns records for example.com"
+clanker cf ask "what workers do I have deployed"
+clanker cf ask "list my tunnels"
+```
+
+</CodeGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Natural language queries" icon="message-question" href="/commands/cloudflare/ask">
+  Learn how to query your Cloudflare account using natural language
+</Card>
+
+<Card title="Deploy resources" icon="rocket" href="/commands/cloudflare/deploy">
+  Explore all deployment options for Workers, Pages, and more
+</Card>
+
+<Card title="Cloudflare provider guide" icon="cloud" href="/providers/cloudflare">
+  Deep dive into Cloudflare integration concepts
+</Card>
+
+<Card title="Configuration" icon="gear" href="/commands/config">
+  Configure Clanker for optimal Cloudflare workflows
+</Card>
+
+</CardGroup>
